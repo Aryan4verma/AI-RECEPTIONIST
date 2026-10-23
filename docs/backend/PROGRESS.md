@@ -100,4 +100,4 @@ NOT_APPLICABLE — no incidents.
 - A stray `.git` repository exists at `C:/.git` root (owned by TrustedInstaller → "dubious ownership" error for git commands that walk up outside a real repo). Do not add a global safe.directory exception for `C:/`; once the project repo is initialized, project git operations resolve to the project's own `.git` first.
 - RAM pressure: only 0.77 GB free at inspection — avoid loading speech + LLM models concurrently; stage loading/unloading.
 
-**Git state at register creation:** repository newly initialized at `C:\AI RECEPTIONIST` (branch `main`); first commit contains this register only. See initial commit SHA in §4 evidence updates at commit time.
+**Git state at register creation:** repository newly initialized at `C:\AI RECEPTIONIST` (branch `main`); initial commit `aabe955576626701834a5bff4e097c1284ed26fe` ("chore: initialize backend progress register (Stage 0 discovery)") contains this register only. Commit identity: global git config `Aryan Verma <verma4aryan4@gmail.com>`. No remote configured — push pending U1.
