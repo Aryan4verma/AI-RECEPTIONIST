@@ -4,7 +4,7 @@
 | --- | --- |
 | Project ID | AI-RECEPTIONIST |
 | Document ID | PROGRESS |
-| Version / date | v0.1 — 2026-10-23 |
+| Version / date | v0.2 — 2026-10-23 |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner (name not recorded — pending) |
 | Scope | Durable register for the AI Receptionist **backend + AI phase**. Frontend implementation is explicitly out of scope in this phase (Frontend Master deferred to a separate, explicitly requested phase). |
 | Document lifecycle | draft (living register; sections updated per stage) |
@@ -14,10 +14,10 @@
 
 ## 1. [REQUIRED] Control and current task
 
-- **Task ID / mode:** T0-DISCOVERY — execution mode, autonomous with mandatory human gates.
-- **Current phase / protocol:** Stage 0 — Discovery and Environment Verification (backend-production protocol 02; G00-CONTEXT).
-- **Scope of this stage:** read-only inventory of workspace, skills, runtimes, Ollama, Supabase MCP target; initialize this register. **Non-goals:** no database mutations, no application scaffolding, no dependency installation, no frontend work, no real Google Calendar access.
-- **Inspected revision / environment:** Workspace `C:\AI RECEPTIONIST` was empty (no files, no git repository) at first inspection 2026-10-23. Git repository initialized at register creation (see §8 for initial commit SHA).
+- **Task ID / mode:** T1-REQUIREMENTS — execution mode, autonomous with mandatory human gates.
+- **Current phase / protocol:** Stage 1 requirements bundle prepared (protocols 03/04); **stopped at G01-REQUIREMENTS human review (protocol 05)**.
+- **Scope of completed work:** Stage 0 discovery (§8); Stage 1 requirements drafting — PROJECT/PLAN/TESTING v0.1 review-ready. **Non-goals honored:** no database mutations, no scaffolding, no frontend, no real Calendar access.
+- **Inspected revision / environment:** branch `main`; requirements bundle committed after `ef36fda` (see git log). Environment facts in §8 unchanged.
 - **Current authorization:** Master execution prompt authorizes Stage 0 discovery work (read-only + register creation) and subsequent staged lifecycle with mandatory human gates. No remote mutation authorization yet.
 
 ## 2. [REQUIRED] Authoritative artifact register
@@ -25,9 +25,9 @@
 | Concern / document ID | Authoritative path / version | Applicability / owner | Approval reference | Dependencies / freshness |
 | --- | --- | --- | --- | --- |
 | PROGRESS | `docs/backend/PROGRESS.md` v0.1 | Register — this file; agent maintains | NONE — pending | Updated every stage |
-| PROJECT | Missing — create in Stage 1 (protocol 03) | Requirements owner | NONE — pending | Stage 1 |
-| PLAN | Missing — create in Stage 1 (protocol 03/04) | Planning owner | NONE — pending | Stage 1 |
-| TESTING | Missing — create in Stage 1 (protocol 03/04) | Verification owner | NONE — pending | Stage 1 |
+| PROJECT | `docs/backend/PROJECT.md` v0.1 — review-ready | Requirements owner | NONE — pending **G01** | Stage 1; invalidates on material scope change |
+| PLAN | `docs/backend/PLAN.md` v0.1 — review-ready | Planning owner | NONE — pending **G01** | Stage 1; sequences WIs 1–11 with gate map |
+| TESTING | `docs/backend/TESTING.md` v0.1 — review-ready | Verification owner | NONE — pending **G01** | Stage 1; TC-01..TC-20 planned, none executed |
 | ARCHITECTURE / BACKEND / DATABASE / SUPABASE / API / AUTH / SECURITY / INTEGRATION / OBSERVABILITY / DEPLOYMENT / RUNBOOK / ENVIRONMENT | Missing — create in Stage 2 (protocol 06–11, 14) per design bundle triggers | Design owners | NONE — pending | After G01-REQUIREMENTS |
 | ADRs | Missing — `decisions/ADR-<id>.md` when significant decisions occur | Design owners | NONE — pending | As triggered |
 | Application source | Missing — workspace empty; scaffold in Stage 3 **after** G01 + G02 approvals | Implementation owner | NONE — pending | Stages 3+ |
@@ -55,7 +55,8 @@
 | Supabase MCP target identity | Stage 0 verification (read-only) | PASS | URL `https://ogxdszjypswutekqgorb.supabase.co` matches expected ref; `public` schema has 0 tables; 0 migrations applied | MCP read-only calls 2026-10-23 |
 | Hardware inventory | Stage 0 verification | PASS | i3-1115G4 (2C/4T), 7.71 GB RAM (0.77 GB free at inspection), 195 GB disk free of 460 GB | PowerShell CIM + `df` 2026-10-23 |
 | Skills accessibility | Stage 0 verification | PASS | backend-production governance (SKILL/WORKFLOW/RULES/CONTEXT_MAP/STACK/PRODUCTION_GATES/protocol 02 + artifact contract + template INDEX) read in full; ai-capabilities entry files verified present (SKILL/RULES/WORKFLOW/CONTEXT_MAP, 8 capability guides, ai-handoff contract) | File reads 2026-10-23 |
-| G01-REQUIREMENTS … G18-FINAL | Later stages | NOT_YET_EXECUTED — future stage boundaries | — | Later stages |
+| G01-REQUIREMENTS | Requirements baseline for backend+AI scope | **NEEDS_HUMAN_APPROVAL** — bundle review-ready: PROJECT/PLAN/TESTING v0.1 + Q1 database decision + optional Q4 retention decision | 2026-10-23, bundle after commit `ef36fda` | Decision request in Stage 1 report; protocol 05 |
+| G02-DESIGN … G18-FINAL | Later stages | NOT_YET_EXECUTED — future stage boundaries; design drafting awaits G01 | — | Later stages |
 
 ## 5. [REQUIRED] Review and authorization ledger
 
@@ -63,7 +64,7 @@
 | --- | --- | --- | --- | --- |
 | Master execution prompt issued (standing instruction for staged autonomous lifecycle with human gates) | Project owner via ZCode prompt | Full backend + AI phase scope | 2026-10-23 | Autonomous stage advancement; STOP at mandatory human gates (G01, G02, action authorizations); no remote mutation yet |
 
-No human gate decisions recorded yet. First expected: G01-REQUIREMENTS after Stage 1 bundle is prepared.
+No human gate decisions recorded yet. **Pending decision: G01-REQUIREMENTS** (bundle: PROJECT/PLAN/TESTING v0.1; required sub-decision Q1 database platform; optional Q4 retention). First expected real ledger entry: the G01 decision record.
 
 ## 6. [OPTIONAL] Incident/recovery handoff
 
@@ -71,8 +72,9 @@ NOT_APPLICABLE — no incidents.
 
 ## 7. [REQUIRED] Resume instruction
 
-- **Next allowed action:** Stage 1 — Requirements and Specifications (protocols 03 + 04), producing PROJECT/PLAN/TESTING drafts and preparing the G01-REQUIREMENTS review bundle. Do not implement from drafts.
-- **Blocking dependencies:** push blocked pending GitHub remote URL (U1); real Calendar work blocked pending credentials/authorization (U2). These do not block Stage 1.
+- **Next allowed action:** **Human decision on G01-REQUIREMENTS** (protocol 05): approve scope/non-goals/acceptance of PROJECT/PLAN/TESTING v0.1 and resolve Q1 (database platform: Supabase ref `ogxdszjypswutekqgorb` vs SQLite; prompt directs Supabase) — optionally also Q4 (retention periods) or record its owner for design. **No design documents, no implementation, no database writes until G01 passes.**
+- **After G01 approval:** record decision in §5 ledger → Stage 2 architecture & contracts (protocols 06–11, 14) → G02-DESIGN.
+- **Blocking dependencies (independent of G01):** push blocked pending GitHub remote URL (U1/Q2); real Calendar work blocked pending credentials/authorization (U2/Q3).
 - **On resume, load:** this register (control §1, unknowns §3, evidence §4); skill governance is distilled and does not need re-reading unless invalidated; ai-capabilities SKILL/RULES when AI stages begin.
 - **Freshness comparisons:** verify workspace contents and git state match §8 record; re-verify Ollama/Supabase identity before dependent stages reuse this evidence.
 
