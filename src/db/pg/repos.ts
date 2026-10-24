@@ -189,18 +189,75 @@ export class PgBookingStateRepo implements BookingStateRepo {
     return { id: rows[0].id };
   }
 
+  async registerAppointment(input: {
+    conversationId: string;
+    expectedState: BookingState;
+    idempotencyKey: string;
+    scheduledStart: Date;
+    scheduledEnd: Date;
+    durationMinutes: number;
+    timezone: string;
+    serviceType?: string;
+    purpose?: string;
+    meetingType?: string;
+    notes?: string;
+  }): Promise<{ appointmentId: string }> {
+    // One transaction: lock the booking-state row, CAS on the expected state,
+    // apply RECHECK_PASSED, insert the appointment with the durable identity.
+    // Concurrent confirmations serialize here and the loser gets a conflict.
+    const client: PoolClient = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const current = await client.query(
+        `select ${BOOKING_STATE_SELECT} from public.booking_state where conversation_id = $1 for update`,
+        [input.conversationId],
+      );
+      if (!current.rows[0]) throw new AppError("NOT_FOUND", "Booking state not found.");
+      const row = mapBookingState(current.rows[0]);
+      if (row.state !== input.expectedState) {
+        throw new AppError("SLOT_TAKEN", "Booking state changed concurrently.");
+      }
+      const result = transition(row.state, "RECHECK_PASSED");
+      if (!result.ok) throw new AppError("INVALID_INPUT", `Illegal booking transition ${row.state} --RECHECK_PASSED.`);
+      const updated = await client.query(
+        `update public.booking_state set state = $2, calendar_idempotency_key = $3, updated_at = now()
+         where conversation_id = $1 returning ${BOOKING_STATE_SELECT}`,
+        [input.conversationId, result.next, input.idempotencyKey],
+      );
+      const inserted = await client.query(
+        `insert into public.appointments
+          (conversation_id, idempotency_key, scheduled_start, scheduled_end, duration_minutes,
+           timezone, status, service_type, purpose, meeting_type, notes)
+         values ($1, $2, $3, $4, $5, $6, 'pending_confirmation', $7, $8, $9, $10)
+         returning id`,
+        [
+          input.conversationId, input.idempotencyKey, input.scheduledStart, input.scheduledEnd,
+          input.durationMinutes, input.timezone, input.serviceType ?? null, input.purpose ?? null,
+          input.meetingType ?? null, input.notes ?? null,
+        ],
+      );
+      await client.query("commit");
+      void updated;
+      return { appointmentId: inserted.rows[0].id };
+    } catch (err) {
+      await client.query("rollback").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   async updateAppointmentOutcome(
     appointmentId: string,
-    outcome: { status: "confirmed" | "unresolved" | "failed"; googleEventId?: string; lastError?: string },
+    outcome: { status: "confirmed" | "unresolved" | "failed"; googleEventId?: string },
   ): Promise<void> {
     await this.pool.query(
       `update public.appointments
        set status = $2,
            google_event_id = coalesce($3, google_event_id),
-           last_error = coalesce($4, last_error),
            updated_at = now()
        where id = $1`,
-      [appointmentId, outcome.status, outcome.googleEventId ?? null, outcome.lastError ?? null],
+      [appointmentId, outcome.status, outcome.googleEventId ?? null],
     );
   }
 
@@ -217,6 +274,30 @@ export class PgBookingStateRepo implements BookingStateRepo {
       status: rows[0].status as string,
       googleEventId: (rows[0].google_event_id as string | null) ?? null,
     };
+  }
+
+  async findOpenAppointmentByConversation(
+    conversationId: string,
+  ): Promise<{ id: string; status: string; idempotencyKey: string } | null> {
+    const { rows } = await this.pool.query(
+      `select id, status, idempotency_key from public.appointments
+       where conversation_id = $1 and status in ('pending_confirmation', 'unresolved')
+       order by created_at desc limit 1`,
+      [conversationId],
+    );
+    if (!rows[0]) return null;
+    return {
+      id: rows[0].id as string,
+      status: rows[0].status as string,
+      idempotencyKey: rows[0].idempotency_key as string,
+    };
+  }
+
+  async repairIdentity(conversationId: string, idempotencyKey: string): Promise<void> {
+    await this.pool.query(
+      `update public.booking_state set calendar_idempotency_key = $2, updated_at = now() where conversation_id = $1`,
+      [conversationId, idempotencyKey],
+    );
   }
 }
 

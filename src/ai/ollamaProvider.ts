@@ -77,7 +77,8 @@ export class OllamaProvider implements LLMProvider {
         return { status: "invalid_output", reason: "unrecognized provider envelope", raw: "" };
       }
       if (parsed.data.error) {
-        return { status: "error", error: new AppError("MODEL_UNAVAILABLE", parsed.data.error) };
+        // Provider error text stays server-side; the client sees a safe message.
+        return { status: "error", error: new AppError("MODEL_UNAVAILABLE", "The language model is currently unavailable.", { providerError: parsed.data.error }) };
       }
       raw = parsed.data.message?.content ?? "";
     } catch (err) {

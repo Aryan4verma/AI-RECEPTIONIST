@@ -144,15 +144,53 @@ export class MemoryBookingStateRepo implements BookingStateRepo {
     return { id };
   }
 
+  async registerAppointment(input: {
+    conversationId: string;
+    expectedState: BookingState;
+    idempotencyKey: string;
+    scheduledStart: Date;
+    scheduledEnd: Date;
+    durationMinutes: number;
+    timezone: string;
+    serviceType?: string;
+    purpose?: string;
+    meetingType?: string;
+    notes?: string;
+  }): Promise<{ appointmentId: string }> {
+    // Single-threaded memory store: the CAS check + insert are effectively atomic.
+    const row = await this.transition({
+      conversationId: input.conversationId,
+      expectedState: input.expectedState,
+      event: "RECHECK_PASSED",
+      patch: { calendarIdempotencyKey: input.idempotencyKey },
+    });
+    const id = randomUUID();
+    this.appointments.push({
+      id,
+      conversationId: input.conversationId,
+      idempotencyKey: input.idempotencyKey,
+      scheduledStart: input.scheduledStart,
+      scheduledEnd: input.scheduledEnd,
+      durationMinutes: input.durationMinutes,
+      timezone: input.timezone,
+      status: "pending_confirmation",
+      serviceType: input.serviceType,
+      purpose: input.purpose,
+      meetingType: input.meetingType,
+      notes: input.notes,
+      stateAfterRegister: row.state,
+    });
+    return { appointmentId: id };
+  }
+
   async updateAppointmentOutcome(
     appointmentId: string,
-    outcome: { status: string; googleEventId?: string; lastError?: string },
+    outcome: { status: string; googleEventId?: string },
   ): Promise<void> {
     const appt = this.appointments.find((a) => a.id === appointmentId);
     if (!appt) throw new Error("appointment not found");
     appt["status"] = outcome.status;
     if (outcome.googleEventId !== undefined) appt["googleEventId"] = outcome.googleEventId;
-    if (outcome.lastError !== undefined) appt["lastError"] = outcome.lastError;
   }
 
   async findAppointmentByIdempotencyKey(
@@ -166,6 +204,24 @@ export class MemoryBookingStateRepo implements BookingStateRepo {
           googleEventId: (appt["googleEventId"] as string | null) ?? null,
         }
       : null;
+  }
+
+  async findOpenAppointmentByConversation(
+    conversationId: string,
+  ): Promise<{ id: string; status: string; idempotencyKey: string } | null> {
+    const appt = this.appointments.find(
+      (a) =>
+        a["conversationId"] === conversationId &&
+        ["pending_confirmation", "unresolved"].includes(a["status"] as string),
+    );
+    return appt
+      ? { id: appt["id"] as string, status: appt["status"] as string, idempotencyKey: appt["idempotencyKey"] as string }
+      : null;
+  }
+
+  async repairIdentity(conversationId: string, idempotencyKey: string): Promise<void> {
+    const row = this.rows.get(conversationId);
+    if (row) row.calendarIdempotencyKey = idempotencyKey;
   }
 }
 

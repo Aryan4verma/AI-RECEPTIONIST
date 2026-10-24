@@ -49,10 +49,18 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
 };
 
 export class AppError extends Error {
+  /**
+   * `details` is SERVER-ONLY diagnostic data (causes, provider/db text,
+   * identifiers). It never enters a customer-facing response unless the
+   * construction site explicitly marks it client-safe via `exposeDetails`.
+   * Messages must be developer-authored safe text — never raw provider or
+   * database output (quality correction 3).
+   */
   constructor(
     public readonly code: ErrorCode,
     message: string,
     public readonly details?: unknown,
+    public readonly exposeDetails = false,
   ) {
     super(message);
     this.name = "AppError";
@@ -70,7 +78,7 @@ export interface ErrorEnvelope {
 export function toEnvelope(err: unknown, requestId: string): ErrorEnvelope {
   if (err instanceof AppError) {
     const body: ErrorEnvelope["error"] = { code: err.code, message: err.message, requestId };
-    if (err.details !== undefined) body.details = err.details;
+    if (err.details !== undefined && err.exposeDetails) body.details = err.details;
     return { error: body };
   }
   return {

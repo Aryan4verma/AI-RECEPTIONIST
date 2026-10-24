@@ -128,18 +128,26 @@ export class BookingService {
 
     if (state.state === "CONFIRMED") {
       // Idempotent replay after success: same token → same truthful result,
-      // never a second event (SEC-9).
+      // never a second event (SEC-9). A missing appointment record is repaired
+      // via reconciliation — never answered with a fabricated id.
       const tokenOk =
         state.confirmationTokenHash !== null &&
         this.hashOfferToken(offerToken) === state.confirmationTokenHash;
       if (!tokenOk) throw new AppError("OFFER_EXPIRED", "Invalid offer token.");
-      const appointment = state.calendarIdempotencyKey
+      let appointment = state.calendarIdempotencyKey
         ? await this.deps.bookingState.findAppointmentByIdempotencyKey(state.calendarIdempotencyKey)
         : null;
+      if (!appointment && state.calendarIdempotencyKey) {
+        await this.reconcile(conversationId);
+        appointment = await this.deps.bookingState.findAppointmentByIdempotencyKey(state.calendarIdempotencyKey);
+      }
+      if (!appointment) {
+        throw new AppError("INTERNAL", "Confirmed booking record could not be loaded; reconciliation has been triggered.");
+      }
       return {
         bookingState: "CONFIRMED",
-        appointmentId: appointment?.id ?? "unknown",
-        eventId: appointment?.googleEventId ?? undefined,
+        appointmentId: appointment.id,
+        eventId: appointment.googleEventId ?? undefined,
       };
     }
 
@@ -219,23 +227,22 @@ export class BookingService {
     }
 
     const idempotencyKey = randomUUID();
-    const appointment = await this.deps.bookingState.createAppointment({
+    // Atomic registration: the RECHECK_PASSED transition, the durable identity,
+    // and the appointment row commit together under the row lock — concurrent
+    // confirmations serialize and the loser gets a conflict, so no orphaned or
+    // duplicate appointment can be created.
+    const { appointmentId } = await this.deps.bookingState.registerAppointment({
       conversationId,
+      expectedState: "RECHECK_AVAILABILITY",
       idempotencyKey,
       scheduledStart: slot,
       scheduledEnd: end,
       durationMinutes,
       timezone,
-      status: "pending_confirmation",
       serviceType: typeof state.extracted["purpose"] === "string" ? String(state.extracted["purpose"]) : undefined,
       purpose: typeof state.extracted["purpose"] === "string" ? String(state.extracted["purpose"]) : undefined,
     });
 
-    // RECHECK_AVAILABILITY → CREATE_EVENT → VERIFY_RESULT (pre-create registration).
-    await this.deps.bookingState.transition({
-      conversationId, expectedState: "RECHECK_AVAILABILITY", event: "RECHECK_PASSED",
-      patch: { calendarIdempotencyKey: idempotencyKey },
-    });
     await this.deps.bookingState.transition({
       conversationId, expectedState: "CREATE_EVENT", event: "CREATE_CONFIRMED", patch: {},
     });
@@ -257,29 +264,28 @@ export class BookingService {
     }
 
     if (outcome.status === "created") {
+      // State machine first (CONFIRMED is the customer truth — the event EXISTS),
+      // then the outcome linkage; a persistence failure is recorded in
+      // booking_state.last_error and repaired by reconciliation — never silent,
+      // never a duplicate event.
+      let persistError: string | null = null;
       try {
-        await this.deps.bookingState.updateAppointmentOutcome(appointment.id, {
+        await this.deps.bookingState.updateAppointmentOutcome(appointmentId, {
           status: "confirmed",
           googleEventId: outcome.eventId,
         });
       } catch (err) {
-        // The event EXISTS; only our persistence of the linkage failed.
-        // Report the true state, surface the persistence failure honestly —
-        // reconciliation backfills the linkage without risking a duplicate.
-        throw new AppError("INTERNAL", "Appointment confirmed on the calendar but outcome persistence failed; reconciliation will repair the record.", {
-          appointmentId: appointment.id,
-          eventId: outcome.eventId,
-          cause: err instanceof Error ? err.message : "unknown",
-        });
+        persistError = `outcome_persist_failed: ${err instanceof Error ? err.message : "unknown"}`;
       }
       await this.deps.bookingState.transition({
-        conversationId, expectedState: "VERIFY_RESULT", event: "CREATE_CONFIRMED", patch: {},
+        conversationId, expectedState: "VERIFY_RESULT", event: "CREATE_CONFIRMED",
+        patch: persistError ? { lastError: persistError } : {},
       });
-      return { bookingState: "CONFIRMED", appointmentId: appointment.id, eventId: outcome.eventId };
+      return { bookingState: "CONFIRMED", appointmentId, eventId: outcome.eventId };
     }
 
     if (outcome.status === "unresolved") {
-      await this.deps.bookingState.updateAppointmentOutcome(appointment.id, { status: "unresolved" });
+      await this.deps.bookingState.updateAppointmentOutcome(appointmentId, { status: "unresolved" });
       await this.deps.bookingState.transition({
         conversationId, expectedState: "VERIFY_RESULT", event: "CREATE_RESULT_UNKNOWN",
         patch: { unresolvedSince: new Date(), calendarIdempotencyKey: idempotencyKey },
@@ -287,10 +293,7 @@ export class BookingService {
       return { bookingState: "UNRESOLVED" };
     }
 
-    await this.deps.bookingState.updateAppointmentOutcome(appointment.id, {
-      status: "failed",
-      lastError: outcome.reason,
-    });
+    await this.deps.bookingState.updateAppointmentOutcome(appointmentId, { status: "failed" });
     await this.deps.bookingState.transition({
       conversationId, expectedState: "VERIFY_RESULT", event: "EXTERNAL_FAILURE",
       patch: { lastError: outcome.reason },
@@ -299,13 +302,30 @@ export class BookingService {
   }
 
   /**
-   * Reconciliation using the durable identity — never re-creates. Handles both
-   * UNRESOLVED flows and CONFIRMED flows whose outcome persistence failed.
+   * Recovery across every persisted post-acceptance window (quality correction 2):
+   *   CREATE_EVENT   — crashed after registration, before/around the send:
+   *                    search by the SAME identity; found → adopt; verified
+   *                    absent → re-send with the SAME identity (never fresh).
+   *   VERIFY_RESULT  — crashed after send, before the outcome transition:
+   *                    found → CONFIRMED; absent → UNRESOLVED (probe later).
+   *   UNRESOLVED     — standard reconciliation; exhausted attempts stay
+   *                    UNRESOLVED and escalate, never auto-FAILED.
+   *   CONFIRMED      — backfills a missing event-id linkage (persist failure).
+   * Missing identities are adopted from the conversation's open appointment.
    */
   async reconcile(conversationId: string): Promise<"confirmed" | "confirmed_absent" | "unresolved"> {
     const state = await this.deps.bookingState.ensure(conversationId);
-    const identity = state.calendarIdempotencyKey;
-    if (!identity || (state.state !== "UNRESOLVED" && state.state !== "CONFIRMED")) return "unresolved";
+    const recoverable = ["CREATE_EVENT", "VERIFY_RESULT", "UNRESOLVED", "CONFIRMED"];
+    if (!recoverable.includes(state.state)) return "unresolved";
+
+    let identity = state.calendarIdempotencyKey;
+    if (!identity) {
+      const open = await this.deps.bookingState.findOpenAppointmentByConversation(conversationId);
+      if (!open) return "unresolved";
+      identity = open.idempotencyKey;
+      await this.deps.bookingState.repairIdentity(conversationId, identity);
+    }
+
     try {
       const search = await this.deps.calendar.findByIdempotencyKey(identity);
       const now = new Date();
@@ -317,6 +337,16 @@ export class BookingService {
             googleEventId: search.eventId,
           });
         }
+        if (state.state === "CREATE_EVENT") {
+          await this.deps.bookingState.transition({
+            conversationId, expectedState: "CREATE_EVENT", event: "CREATE_CONFIRMED", patch: { lastReconciledAt: now },
+          });
+        }
+        if (state.state === "VERIFY_RESULT") {
+          await this.deps.bookingState.transition({
+            conversationId, expectedState: "VERIFY_RESULT", event: "CREATE_CONFIRMED", patch: { lastReconciledAt: now },
+          });
+        }
         if (state.state === "UNRESOLVED") {
           await this.deps.bookingState.transition({
             conversationId, expectedState: "UNRESOLVED", event: "RECONCILIATION_FOUND_EVENT",
@@ -325,9 +355,55 @@ export class BookingService {
         }
         return "confirmed";
       }
-      // Absent today is not yet definitive evidence of non-creation — the
-      // flow stays UNRESOLVED and escalates; it is never auto-FAILED and
-      // never re-created with a fresh identity.
+
+      if (state.state === "CREATE_EVENT") {
+        // The send never (verifiably) happened: re-send with the SAME durable
+        // identity — a fresh identity would risk a duplicate event.
+        const appointmentRow = appointment ?? (await this.deps.bookingState.findOpenAppointmentByConversation(conversationId));
+        if (!appointmentRow) return "unresolved";
+        await this.deps.bookingState.transition({
+          conversationId, expectedState: "CREATE_EVENT", event: "CREATE_CONFIRMED", patch: { lastReconciledAt: now },
+        });
+        let outcome: Awaited<ReturnType<CalendarProvider["createEvent"]>>;
+        try {
+          outcome = await this.deps.calendar.createEvent({
+            idempotencyKey: identity,
+            start: (appointmentRow as unknown as { scheduledStart?: string }).scheduledStart ?? new Date().toISOString(),
+            end: (appointmentRow as unknown as { scheduledEnd?: string }).scheduledEnd ?? new Date().toISOString(),
+            summary: "AI Receptionist appointment",
+            timezone: "UTC",
+          });
+        } catch {
+          outcome = { status: "unresolved" };
+        }
+        if (outcome.status === "created") {
+          await this.deps.bookingState.updateAppointmentOutcome(appointmentRow.id, {
+            status: "confirmed",
+            googleEventId: outcome.eventId,
+          });
+          await this.deps.bookingState.transition({
+            conversationId, expectedState: "VERIFY_RESULT", event: "CREATE_CONFIRMED", patch: { lastReconciledAt: now },
+          });
+          return "confirmed";
+        }
+        await this.deps.bookingState.updateAppointmentOutcome(appointmentRow.id, { status: "unresolved" });
+        await this.deps.bookingState.transition({
+          conversationId, expectedState: "VERIFY_RESULT", event: "CREATE_RESULT_UNKNOWN",
+          patch: { unresolvedSince: new Date(), lastReconciledAt: now },
+        });
+        return "unresolved";
+      }
+
+      if (state.state === "VERIFY_RESULT") {
+        // Sent, response lost, and the search found nothing YET — probe again
+        // later; it is not definitive evidence of non-creation.
+        await this.deps.bookingState.transition({
+          conversationId, expectedState: "VERIFY_RESULT", event: "CREATE_RESULT_UNKNOWN",
+          patch: { unresolvedSince: state.unresolvedSince ?? new Date(), lastReconciledAt: now },
+        });
+        return "unresolved";
+      }
+
       if (state.state === "UNRESOLVED") {
         await this.deps.bookingState.transition({
           conversationId, expectedState: "UNRESOLVED", event: "RECONCILIATION_EXHAUSTED",

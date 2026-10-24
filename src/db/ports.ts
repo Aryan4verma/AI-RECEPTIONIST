@@ -96,14 +96,38 @@ export interface BookingStateRepo {
     meetingType?: string;
     notes?: string;
   }): Promise<{ id: string }>;
+  /**
+   * Atomic registration: locks the booking-state row, validates the expected
+   * state, applies the RECHECK_PASSED transition AND inserts the appointment
+   * with the durable identity in one transaction — concurrent confirmations
+   * cannot create orphaned or duplicate appointment rows.
+   */
+  registerAppointment(input: {
+    conversationId: string;
+    expectedState: BookingState;
+    idempotencyKey: string;
+    scheduledStart: Date;
+    scheduledEnd: Date;
+    durationMinutes: number;
+    timezone: string;
+    serviceType?: string;
+    purpose?: string;
+    meetingType?: string;
+    notes?: string;
+  }): Promise<{ appointmentId: string }>;
   /** Persist the truthful outcome of a calendar operation (SEC-13). */
   updateAppointmentOutcome(
     appointmentId: string,
-    outcome: { status: "confirmed" | "unresolved" | "failed"; googleEventId?: string; lastError?: string },
+    outcome: { status: "confirmed" | "unresolved" | "failed"; googleEventId?: string },
   ): Promise<void>;
   findAppointmentByIdempotencyKey(
     idempotencyKey: string,
   ): Promise<{ id: string; status: string; googleEventId: string | null } | null>;
+  findOpenAppointmentByConversation(
+    conversationId: string,
+  ): Promise<{ id: string; status: string; idempotencyKey: string } | null>;
+  /** Recovery-path repair: adopt an identity discovered on an open appointment. */
+  repairIdentity(conversationId: string, idempotencyKey: string): Promise<void>;
 }
 
 export interface ConsentRepo {
