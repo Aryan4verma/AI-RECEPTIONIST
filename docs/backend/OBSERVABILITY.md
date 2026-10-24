@@ -6,10 +6,10 @@
 | Version / date | v0.1 — 2026-10-24 |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Logs, metrics, health, correlation, privacy bounds |
-| Document lifecycle | review-ready — pending **G02-DESIGN** |
+| Document lifecycle | approved — G02-DESIGN (conditional approval, conditions satisfied 2026-10-24) |
 | Input provenance | `ARCHITECTURE.md` v0.1; protocol 18 |
 | Related authoritative files | `RUNBOOK.md`, `SECURITY.md` |
-| Approval reference | NONE — pending G02 |
+| Approval reference | G02-DESIGN APPROVED WITH CONDITIONS 2026-10-24 — see PROGRESS.md §5 |
 
 ## 1. [REQUIRED] Control and operational questions
 

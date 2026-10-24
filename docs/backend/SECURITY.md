@@ -7,10 +7,10 @@
 | Version / date | v0.2 — 2026-10-24 (G02 change-request revisions: dual-layer consent, fail-closed store, migration integrity, SEC-F4/F5) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Threat model, control mapping for SEC-1…SEC-16, specialized surfaces, findings policy |
-| Document lifecycle | review-ready — pending **G02-DESIGN** |
+| Document lifecycle | approved — G02-DESIGN (conditional approval, conditions satisfied 2026-10-24) |
 | Input provenance | Approved `PROJECT.md` v0.2 (SEC invariants); `ARCHITECTURE.md`; ai-capabilities `RULES.md`; protocol 16 |
 | Related authoritative files | `AUTH.md`, `API.md`, `DATABASE.md`, `decisions/ADR-0002/0003/0004.md`, `RUNBOOK.md` |
-| Approval reference | NONE — pending G02 |
+| Approval reference | G02-DESIGN APPROVED WITH CONDITIONS 2026-10-24 — see PROGRESS.md §5 |
 
 ## 1. [REQUIRED] Control, assets and scope
 
@@ -60,6 +60,7 @@
 | SEC-F4 | Supabase Vault privilege posture on this project unverified — decrypted-secret reads could be over-granted | Medium (secret exposure) | Fail-closed per ADR-0002 v0.2: verify `vault.decrypted_secrets` grants/Data-API exposure before adoption; otherwise credential persistence disabled | Open — implementation verification (TC-32) |
 | SEC-F5 | Proposed performance/resource budgets are unverified on this host (~0.77 GB free at discovery) | Low (operational honesty) | Treat as provisional measurement targets; admission checks + honest cold/warm measurement at implementation (TC-37/TC-19); no false performance-gate claims | Open — measurement required |
 | SEC-F6 | `npm audit --omit=dev` (2026-10-24): zod <4.6.6 — high severity, memory exhaustion validating oversized constrained collections (GHSA-mrhx-c7xc-m3w5) | High advisory / limited current exposure (1 MB JSON body limit + bounded audio; inputs never unbounded) | **REMEDIATED 2026-10-24 (security preflight):** upgraded to zod 4.6.7; hand-rolled `_def` walker replaced with native `z.toJSONSchema`; AI output schemas now `strictObject` (unknown keys rejected, not stripped); bounded-input/deep-nesting/oversize rejection tests added (`schemas.test.ts`); `npm audit --omit=dev` = 0 vulnerabilities; typecheck + full suite (57/57) pass with no weakened validation | Closed — evidence in repo |
+| SEC-F7 | LIVE eval finding (2026-10-24, real qwen3:1.7b): the 1.7B model **adopted an injected instruction at the intent-classification level** (attacker-demanded intent echoed; 1/1 probe run). Schema validity held; no execution path exists — the provider has no tools and booking actions are backend-controlled regardless of classified intent (SEC-6/12) | Medium (intent manipulation → wrong conversation routing; no privileged effect) | Structural mitigations already in place (no model tools; backend-owned decisions; strict output validation). Stage 4 evals track resistance across a corpus; candidate mitigations: stronger local model, hardened prompts, intent-confidence thresholds. Owner informed via register | Open — tracked eval risk (R1) |
 | — | No fabricated clean scans: dependency/static audits are executed at release stage, not claimed now | — | — | — |
 
 ## 5. [REQUIRED] Change and incident boundaries

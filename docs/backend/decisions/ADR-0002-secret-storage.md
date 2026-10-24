@@ -5,7 +5,7 @@
 | Project ID | AI-RECEPTIONIST |
 | Document ID | ADR-0002 |
 | Version / date | v0.2 — 2026-10-24 (G02 change-request revision: fail-closed policy) |
-| Decision status | **PROPOSED** — requires G02-DESIGN human approval |
+| Decision status | **ACCEPTED** — approved at G02-DESIGN (conditional approval, 2026-10-24; see PROGRESS.md section 5) |
 | Scope | Storage of cloud-provider API keys (SEC-14, FR-16); not service-role env handling |
 
 ## 1. [REQUIRED] Control and decision status

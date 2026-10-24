@@ -7,10 +7,10 @@
 | Version / date | v0.1 — 2026-10-24 |
 | Owner | ZCode execution agent (maintainer); operational owner: project owner (sole operator) |
 | Scope | Routine ops, incident procedures, rollback/restore for the dev-laptop + Supabase topology |
-| Document lifecycle | review-ready — pending **G02-DESIGN** |
+| Document lifecycle | approved — G02-DESIGN (conditional approval, conditions satisfied 2026-10-24) |
 | Input provenance | `ARCHITECTURE.md`/`ENVIRONMENT.md` v0.1; protocol 23 |
 | Related authoritative files | `DEPLOYMENT.md`, `SECURITY.md` §5, `OBSERVABILITY.md` |
-| Approval reference | NONE — pending G02 |
+| Approval reference | G02-DESIGN APPROVED WITH CONDITIONS 2026-10-24 — see PROGRESS.md §5 |
 
 ## 1. [REQUIRED] Control and service ownership
 

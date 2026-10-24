@@ -7,10 +7,10 @@
 | Version / date | v0.2 — 2026-10-24 (G02 change-request revisions: consent-evidence FK, consent trigger, is_app_admin function, expiry columns) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Intended schema, integrity, access, queries, evolution for Supabase/PostgreSQL `ogxdszjypswutekqgorb` |
-| Document lifecycle | review-ready — pending **G02-DESIGN** (no DDL applied) |
+| Document lifecycle | approved — G02-DESIGN (conditional approval, conditions satisfied 2026-10-24; applied schema verified 2026-10-24) |
 | Input provenance | Approved `PROJECT.md` v0.2; `ARCHITECTURE.md` v0.1; protocols 07/08/10 |
 | Related authoritative files | `SUPABASE.md`, `AUTH.md`, `decisions/ADR-0001/0002/0006.md` |
-| Approval reference | NONE — pending G02 |
+| Approval reference | G02-DESIGN APPROVED WITH CONDITIONS 2026-10-24 — see PROGRESS.md §5 |
 
 ## 1. [REQUIRED] Control and state authority
 

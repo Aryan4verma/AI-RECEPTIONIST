@@ -5,7 +5,7 @@
 | Project ID | AI-RECEPTIONIST |
 | Document ID | ADR-0006 |
 | Version / date | v0.2 — 2026-10-24 (G02 change-request revision: consent-evidence consistency, deletion mechanics) |
-| Decision status | **PROPOSED** — requires G02-DESIGN human approval (Q4 deferred here by owner at G01) |
+| Decision status | **ACCEPTED** — approved at G02-DESIGN with initial development-policy durations (2026-10-24; production or legal changes revisit via protocol 21) |
 | Scope | Recording consent, retention durations, deletion rules for transcripts/recordings/customer data |
 
 ## 1. [REQUIRED] Control and decision status

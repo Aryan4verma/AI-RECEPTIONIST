@@ -7,10 +7,10 @@
 | Version / date | v0.1 — 2026-10-24 |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Future-frontend contract (incl. AI Models & Providers page), journey mapping, identity/cache/retry, external providers |
-| Document lifecycle | review-ready — pending **G02-DESIGN** (design mode only — no frontend work this phase) |
+| Document lifecycle | approved — G02-DESIGN (conditional approval, conditions satisfied 2026-10-24; design mode only — no frontend work this phase) |
 | Input provenance | Approved `PROJECT.md` v0.2 (FR-18); protocols 11/14; ai-capabilities `contracts/ai-handoff.md` |
 | Related authoritative files | `API.md`, `AUTH.md`, `SECURITY.md`, `BACKEND.md` |
-| Approval reference | NONE — pending G02 |
+| Approval reference | G02-DESIGN APPROVED WITH CONDITIONS 2026-10-24 — see PROGRESS.md §5 |
 
 ## 1. [REQUIRED] Control and boundary inventory
 

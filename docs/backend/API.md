@@ -7,10 +7,10 @@
 | Version / date | v0.2 — 2026-10-24 (G02 change-request revisions: CREDENTIAL_STORE_UNAVAILABLE fail-closed, BOOKING_UNRESOLVED code) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | REST operations, wire rules, error contract, limits for backend phase |
-| Document lifecycle | review-ready — pending **G02-DESIGN** |
+| Document lifecycle | approved — G02-DESIGN (conditional approval, conditions satisfied 2026-10-24) |
 | Input provenance | Approved `PROJECT.md` v0.2 (incl. FR-18 settings contract); `AUTH.md` v0.1; protocol 11 |
 | Related authoritative files | `INTEGRATION.md`, `AUTH.md`, `SECURITY.md`, `BACKEND.md` |
-| Approval reference | NONE — pending G02 |
+| Approval reference | G02-DESIGN APPROVED WITH CONDITIONS 2026-10-24 — see PROGRESS.md §5 |
 
 ## 1. [REQUIRED] Control and contract authority
 

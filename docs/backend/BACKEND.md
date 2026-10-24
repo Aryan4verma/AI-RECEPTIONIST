@@ -7,10 +7,10 @@
 | Version / date | v0.2 — 2026-10-24 (G02 change-request revisions: unresolved-outcome semantics, dual-layer consent, resource admission) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Domain modules, operations, invariants, concurrency and failure behavior |
-| Document lifecycle | review-ready — pending **G02-DESIGN** |
+| Document lifecycle | approved — G02-DESIGN (conditional approval, conditions satisfied 2026-10-24) |
 | Input provenance | `ARCHITECTURE.md` v0.1; approved `PROJECT.md` v0.2 |
 | Related authoritative files | `ARCHITECTURE.md`, `DATABASE.md`, `AUTH.md`, `API.md`, `decisions/ADR-0003..0006.md` |
-| Approval reference | NONE — pending G02 |
+| Approval reference | G02-DESIGN APPROVED WITH CONDITIONS 2026-10-24 — see PROGRESS.md §5 |
 
 ## 1. [REQUIRED] Control and requirement mapping
 

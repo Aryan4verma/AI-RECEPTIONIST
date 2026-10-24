@@ -144,9 +144,28 @@ export class MemoryBookingStateRepo implements BookingStateRepo {
     return { id };
   }
 
-  async setAppointmentEvent(appointmentId: string, eventId: string): Promise<void> {
+  async updateAppointmentOutcome(
+    appointmentId: string,
+    outcome: { status: string; googleEventId?: string; lastError?: string },
+  ): Promise<void> {
     const appt = this.appointments.find((a) => a.id === appointmentId);
-    if (appt) appt.googleEventId = eventId;
+    if (!appt) throw new Error("appointment not found");
+    appt["status"] = outcome.status;
+    if (outcome.googleEventId !== undefined) appt["googleEventId"] = outcome.googleEventId;
+    if (outcome.lastError !== undefined) appt["lastError"] = outcome.lastError;
+  }
+
+  async findAppointmentByIdempotencyKey(
+    idempotencyKey: string,
+  ): Promise<{ id: string; status: string; googleEventId: string | null } | null> {
+    const appt = this.appointments.find((a) => a["idempotencyKey"] === idempotencyKey);
+    return appt
+      ? {
+          id: appt["id"] as string,
+          status: appt["status"] as string,
+          googleEventId: (appt["googleEventId"] as string | null) ?? null,
+        }
+      : null;
   }
 }
 

@@ -189,11 +189,34 @@ export class PgBookingStateRepo implements BookingStateRepo {
     return { id: rows[0].id };
   }
 
-  async setAppointmentEvent(appointmentId: string, eventId: string): Promise<void> {
-    await this.pool.query(`update public.appointments set google_event_id = $2, updated_at = now() where id = $1`, [
-      appointmentId,
-      eventId,
-    ]);
+  async updateAppointmentOutcome(
+    appointmentId: string,
+    outcome: { status: "confirmed" | "unresolved" | "failed"; googleEventId?: string; lastError?: string },
+  ): Promise<void> {
+    await this.pool.query(
+      `update public.appointments
+       set status = $2,
+           google_event_id = coalesce($3, google_event_id),
+           last_error = coalesce($4, last_error),
+           updated_at = now()
+       where id = $1`,
+      [appointmentId, outcome.status, outcome.googleEventId ?? null, outcome.lastError ?? null],
+    );
+  }
+
+  async findAppointmentByIdempotencyKey(
+    idempotencyKey: string,
+  ): Promise<{ id: string; status: string; googleEventId: string | null } | null> {
+    const { rows } = await this.pool.query(
+      `select id, status, google_event_id from public.appointments where idempotency_key = $1`,
+      [idempotencyKey],
+    );
+    if (!rows[0]) return null;
+    return {
+      id: rows[0].id as string,
+      status: rows[0].status as string,
+      googleEventId: (rows[0].google_event_id as string | null) ?? null,
+    };
   }
 }
 

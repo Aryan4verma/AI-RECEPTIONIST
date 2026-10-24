@@ -15,7 +15,7 @@
 ## 1. [REQUIRED] Document control and provenance
 
 - **Human brief:** master execution prompt (2026-10-23) — build the complete backend and AI capabilities of an AI Receptionist application through staged, gated development; genuinely functional systems, not demonstrations.
-- **Change CH-1 (2026-10-24, project owner instruction):** add a dynamic multi-provider AI model system — automatic local Ollama model discovery, configurable cloud API providers (OpenAI-compatible adapter first), one unified backend inference contract, secure API-key management, deliberate runtime switching/fallback, and a documented settings API contract for a future frontend page. Incorporated into this v0.2 baseline before G01; still **review-ready, not approved**.
+- **Change CH-1 (2026-10-24, project owner instruction):** add a dynamic multi-provider AI model system — automatic local Ollama model discovery, configurable cloud API providers (OpenAI-compatible adapter first), one unified backend inference contract, secure API-key management, deliberate runtime switching/fallback, and a documented settings API contract for a future frontend page. Incorporated into this v0.2 baseline and **approved at G01 (2026-10-24)**.
 - **Inspected baseline:** workspace was empty (greenfield); verified environment facts recorded in `PROGRESS.md` §8 (Node v24.15.0, Python 3.11.9, Ollama 0.40.9 with `qwen3:1.7b` smoke-tested OK, Supabase ref `ogxdszjypswutekqgorb` reachable and empty, host i3-1115G4 / 7.71 GB RAM).
 - **Verified facts** are marked `[F]`; **proposed decisions/defaults** are marked `[P]`; unresolved questions are Q-IDs in §6. No product/business facts are invented; business content (name, services, FAQs, hours) is configuration data supplied by the owner.
 

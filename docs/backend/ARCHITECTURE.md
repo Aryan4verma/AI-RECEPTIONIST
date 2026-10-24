@@ -7,10 +7,10 @@
 | Version / date | v0.2 — 2026-10-24 (G02 change-request revisions: AD-7 fail-closed, AD-9 connection mode, resource-pressure honesty) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | System topology, trust boundaries, technology and module decisions for the backend + AI phase |
-| Document lifecycle | review-ready — pending **G02-DESIGN** |
+| Document lifecycle | approved — G02-DESIGN (conditional approval, conditions satisfied 2026-10-24) |
 | Input provenance | Approved `PROJECT.md` v0.2 (G01, 2026-10-24); `PROGRESS.md` §8 discovery facts; protocols 06/07/08/09/10/11/14 |
 | Related authoritative files | `BACKEND.md`, `DATABASE.md`, `SUPABASE.md`, `AUTH.md`, `API.md`, `SECURITY.md`, `INTEGRATION.md`, `decisions/ADR-0001..0006.md` |
-| Approval reference | NONE — pending G02 |
+| Approval reference | G02-DESIGN APPROVED WITH CONDITIONS 2026-10-24 — see PROGRESS.md §5 |
 
 ## 1. [REQUIRED] Control and drivers
 

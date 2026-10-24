@@ -7,10 +7,10 @@
 | Version / date | v0.2 — 2026-10-24 (G02 change-request revisions: recursion-free RLS, token hardening, independent backend enforcement) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Identity, session lifecycle, access matrix, privileged boundaries |
-| Document lifecycle | review-ready — pending **G02-DESIGN** |
+| Document lifecycle | approved — G02-DESIGN (conditional approval, conditions satisfied 2026-10-24) |
 | Input provenance | Approved `PROJECT.md` v0.2; protocols 09/10; `ARCHITECTURE.md` AD-3/AD-8 |
 | Related authoritative files | `DATABASE.md` §3, `SUPABASE.md` §3, `API.md`, `SECURITY.md` |
-| Approval reference | NONE — pending G02 |
+| Approval reference | G02-DESIGN APPROVED WITH CONDITIONS 2026-10-24 — see PROGRESS.md §5 |
 
 ## 1. [REQUIRED] Control and trust model
 

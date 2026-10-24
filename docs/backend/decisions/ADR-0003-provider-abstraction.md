@@ -5,7 +5,7 @@
 | Project ID | AI-RECEPTIONIST |
 | Document ID | ADR-0003 |
 | Version / date | v0.1 — 2026-10-24 |
-| Decision status | **PROPOSED** — requires G02-DESIGN human approval |
+| Decision status | **ACCEPTED** — approved at G02-DESIGN (conditional approval, 2026-10-24; see PROGRESS.md section 5) |
 | Scope | FR-15/FR-16/FR-17 provider architecture (CH-1) |
 
 ## 1. [REQUIRED] Control and decision status

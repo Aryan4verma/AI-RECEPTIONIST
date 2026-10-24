@@ -7,10 +7,10 @@
 | Version / date | v0.2 — 2026-10-24 (G02 change-request revisions: connection mode, credential classes, CLI-only migration path, Vault verification) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Supabase provider topology, credential classes, connection mode, capabilities for project `ogxdszjypswutekqgorb` |
-| Document lifecycle | review-ready — pending **G02-DESIGN** |
+| Document lifecycle | approved — G02-DESIGN (conditional approval, conditions satisfied 2026-10-24) |
 | Input provenance | G01 approval (Q1 = Supabase, platform-only); protocol 08; `DATABASE.md` v0.1 |
 | Related authoritative files | `DATABASE.md`, `AUTH.md`, `ENVIRONMENT.md`, `decisions/ADR-0001/0002.md` |
-| Approval reference | NONE — pending G02 |
+| Approval reference | G02-DESIGN APPROVED WITH CONDITIONS 2026-10-24 — see PROGRESS.md §5 |
 
 ## 1. [REQUIRED when active] Control and targets
 

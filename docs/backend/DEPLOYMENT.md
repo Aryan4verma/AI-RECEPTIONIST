@@ -7,10 +7,10 @@
 | Version / date | v0.1 — 2026-10-24 |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Release candidate shape, preflight, release sequence for the development target |
-| Document lifecycle | review-ready — pending **G02-DESIGN** (deployment execution separately gated) |
+| Document lifecycle | approved — G02-DESIGN (conditional approval; deployment execution separately gated) |
 | Input provenance | `ARCHITECTURE.md` v0.1; `ENVIRONMENT.md` v0.1; protocols 19/23 |
 | Related authoritative files | `RUNBOOK.md`, `ENVIRONMENT.md`, `PROGRESS.md` §5 authorization rows |
-| Approval reference | NONE — pending G02 (and no production target exists — Q6 open) |
+| Approval reference | G02-DESIGN APPROVED WITH CONDITIONS 2026-10-24 (PROGRESS §5); production target still open (Q6) |
 
 ## 1. [REQUIRED] Control and exact candidate
 

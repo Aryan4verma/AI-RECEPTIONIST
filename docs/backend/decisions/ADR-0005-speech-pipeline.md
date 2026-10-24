@@ -5,7 +5,7 @@
 | Project ID | AI-RECEPTIONIST |
 | Document ID | ADR-0005 |
 | Version / date | v0.1 — 2026-10-24 |
-| Decision status | **PROPOSED** — requires G02-DESIGN human approval |
+| Decision status | **ACCEPTED** — approved at G02-DESIGN (conditional approval, 2026-10-24; see PROGRESS.md section 5) |
 | Scope | FR-8 speech pipeline (STT in, response text out; no TTS server) |
 
 ## 1. [REQUIRED] Control and decision status

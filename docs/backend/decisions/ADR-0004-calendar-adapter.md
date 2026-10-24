@@ -5,7 +5,7 @@
 | Project ID | AI-RECEPTIONIST |
 | Document ID | ADR-0004 |
 | Version / date | v0.2 — 2026-10-24 (G02 change-request revision: explicit unresolved-outcome semantics) |
-| Decision status | **PROPOSED** — requires G02-DESIGN human approval |
+| Decision status | **ACCEPTED** — approved at G02-DESIGN (conditional approval, 2026-10-24; see PROGRESS.md section 5) |
 | Scope | FR-6/FR-7/FR-11 calendar design (mock-first, OAuth, concurrency, idempotency) |
 
 ## 1. [REQUIRED] Control and decision status

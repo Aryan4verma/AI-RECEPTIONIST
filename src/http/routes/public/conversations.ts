@@ -89,7 +89,9 @@ export function registerConversationRoutes(app: FastifyInstance, deps: Conversat
 
   app.post("/api/v1/conversations/:id/cancel", async (request) => {
     const conversation = await requireConversation(request);
-    await deps.bookingService.cancel(conversation.id).catch(() => undefined);
+    // Booking-cancellation failures are consequential — they propagate to the
+    // error envelope instead of being silently suppressed (quality correction 3).
+    await deps.bookingService.cancel(conversation.id);
     await deps.conversationService.end(conversation);
     return { conversationState: "ended" };
   });

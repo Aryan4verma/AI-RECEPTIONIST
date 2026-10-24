@@ -89,14 +89,21 @@ export interface BookingStateRepo {
     scheduledEnd: Date;
     durationMinutes: number;
     timezone: string;
-    status: "pending_confirmation" | "confirmed" | "unresolved";
+    status: "pending_confirmation" | "confirmed" | "unresolved" | "failed";
     googleEventId?: string;
     serviceType?: string;
     purpose?: string;
     meetingType?: string;
     notes?: string;
   }): Promise<{ id: string }>;
-  setAppointmentEvent(appointmentId: string, eventId: string): Promise<void>;
+  /** Persist the truthful outcome of a calendar operation (SEC-13). */
+  updateAppointmentOutcome(
+    appointmentId: string,
+    outcome: { status: "confirmed" | "unresolved" | "failed"; googleEventId?: string; lastError?: string },
+  ): Promise<void>;
+  findAppointmentByIdempotencyKey(
+    idempotencyKey: string,
+  ): Promise<{ id: string; status: string; googleEventId: string | null } | null>;
 }
 
 export interface ConsentRepo {

@@ -7,10 +7,10 @@
 | Version / date | v0.2 — 2026-10-24 (G02 change-request revisions: credential-class separation, session-pooler mode, provisional budgets + admission checks) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Runtime identity, targets, configuration schema, capacity/lifecycle |
-| Document lifecycle | review-ready — pending **G02-DESIGN** |
+| Document lifecycle | approved — G02-DESIGN (conditional approval, conditions satisfied 2026-10-24) |
 | Input provenance | `PROGRESS.md` §8 discovery facts; `ARCHITECTURE.md` v0.1 |
 | Related authoritative files | `DEPLOYMENT.md`, `SUPABASE.md` §5, `SECURITY.md` |
-| Approval reference | NONE — pending G02 |
+| Approval reference | G02-DESIGN APPROVED WITH CONDITIONS 2026-10-24 — see PROGRESS.md §5 |
 
 ## 1. [REQUIRED] Control and runtime identity
 
