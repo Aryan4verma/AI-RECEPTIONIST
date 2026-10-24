@@ -257,6 +257,11 @@ export class MemoryBookingStateRepo implements BookingStateRepo {
     if (row) row.calendarIdempotencyKey = idempotencyKey;
   }
 
+  async markCancelRequested(conversationId: string, reason: string): Promise<void> {
+    const row = this.rows.get(conversationId);
+    if (row) row.lastError = `cancel_requested: ${reason}`;
+  }
+
   async updateExtracted(conversationId: string, extracted: Record<string, unknown>): Promise<void> {
     const row = this.rows.get(conversationId);
     if (row) {

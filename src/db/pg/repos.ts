@@ -342,6 +342,13 @@ export class PgBookingStateRepo implements BookingStateRepo {
     );
   }
 
+  async markCancelRequested(conversationId: string, reason: string): Promise<void> {
+    await this.pool.query(
+      `update public.booking_state set last_error = $2, updated_at = now() where conversation_id = $1`,
+      [conversationId, `cancel_requested: ${reason}`],
+    );
+  }
+
   async updateExtracted(conversationId: string, extracted: Record<string, unknown>): Promise<void> {
     await this.pool.query(
       `update public.booking_state set extracted = $2, updated_at = now() where conversation_id = $1`,

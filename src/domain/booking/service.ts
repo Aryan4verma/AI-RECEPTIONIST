@@ -388,7 +388,12 @@ export class BookingService {
    */
   async reconcile(conversationId: string): Promise<"confirmed" | "confirmed_absent" | "unresolved"> {
     const state = await this.deps.bookingState.ensure(conversationId);
-    const recoverable = ["CREATE_EVENT", "VERIFY_RESULT", "UNRESOLVED", "CONFIRMED"];
+    // Durable cancellation intent overrides creation-recovery: a cancel
+    // requested mid-flight means reconciliation must never CREATE.
+    const cancelIntent = state.lastError?.startsWith("cancel_requested") === true;
+    const recoverable = cancelIntent
+      ? ["VERIFY_RESULT", "UNRESOLVED", "CONFIRMED"]
+      : ["CREATE_EVENT", "VERIFY_RESULT", "UNRESOLVED", "CONFIRMED"];
     if (!recoverable.includes(state.state)) return "unresolved";
 
     let identity = state.calendarIdempotencyKey;
@@ -404,7 +409,23 @@ export class BookingService {
       const now = new Date();
       const appointment = await this.deps.bookingState.findAppointmentByIdempotencyKey(identity);
       if (search.status === "found") {
-        if (appointment && appointment.status !== "cancelled") {
+        // DURABLE CANCELLATION INTENT (recovery correction): if the unresolved
+        // state arose from a customer cancellation, reconciliation retries the
+        // cancellation (idempotent provider-side) instead of re-confirming.
+        const cancelIntent = state.lastError?.startsWith("cancel_requested") === true;
+        if (cancelIntent && appointment && appointment.status !== "cancelled") {
+          const retry = await this.deps.calendar.cancelEvent(search.eventId);
+          if (retry.status === "cancelled") {
+            await this.deps.bookingState.updateAppointmentOutcome(appointment.id, { status: "cancelled" });
+            await this.deps.audit?.append({
+              actorType: "system", actorId: null, action: "booking.cancel_completed_on_reconcile",
+              entityType: "appointments", entityId: appointment.id,
+              detail: { identity, eventId: search.eventId },
+            });
+          }
+          // cancelled/unresolved retry outcomes keep the appointment out of
+          // confirmed state either way — the customer's intent stands.
+        } else if (appointment && appointment.status !== "cancelled") {
           // Race guard: a customer/admin cancellation is never silently
           // re-confirmed by a concurrent reconciliation.
           await this.deps.bookingState.updateAppointmentOutcome(appointment.id, {
@@ -509,7 +530,33 @@ export class BookingService {
         return "unresolved";
       }
 
+      // Durable cancellation intent + verified-absent event: the cancellation
+      // implicitly succeeded for ANY recoverable state (the machine's CONFIRMED
+      // terminal cannot transition, so the appointment record is the truth and
+      // publicStatus/replay already honor it).
+      if (
+        search.status === "verified_absent" &&
+        state.lastError?.startsWith("cancel_requested") === true &&
+        state.state !== "UNRESOLVED"
+      ) {
+        if (appointment) {
+          await this.deps.bookingState.updateAppointmentOutcome(appointment.id, { status: "cancelled" });
+        }
+        return "confirmed_absent";
+      }
       if (state.state === "UNRESOLVED") {
+        // Durable cancellation intent: a verified-absent event means the
+        // cancellation implicitly succeeded — transition to CANCELLED.
+        if (search.status === "verified_absent" && state.lastError?.startsWith("cancel_requested") === true) {
+          if (appointment) {
+            await this.deps.bookingState.updateAppointmentOutcome(appointment.id, { status: "cancelled" });
+          }
+          await this.deps.bookingState.transition({
+            conversationId, expectedState: "UNRESOLVED", event: "CUSTOMER_CANCELLED",
+            patch: { lastReconciledAt: now, lastError: null },
+          });
+          return "confirmed_absent";
+        }
         await this.deps.bookingState.transition({
           conversationId, expectedState: "UNRESOLVED", event: "RECONCILIATION_EXHAUSTED",
           patch: { reconciliationAttempts: state.reconciliationAttempts + 1, lastReconciledAt: now },
@@ -575,6 +622,10 @@ export class BookingService {
           });
         }
         if (cancel.status === "unresolved") {
+          await this.deps.bookingState.markCancelRequested(
+            (await this.deps.bookingState.findAppointmentById(appointmentId))?.["conversationId"] as string ?? appointmentId,
+            "admin cancel response lost",
+          );
           throw new AppError("CALENDAR_UNAVAILABLE", "Calendar cancellation is unverified; the appointment remains unchanged.", {});
         }
         calendarCancelled = true;
@@ -619,8 +670,10 @@ export class BookingService {
           }
           if (cancel.status === "unresolved") {
             // The cancel request may or may not have landed — preserve the
-            // uncertain state and escalate; never persist a definite outcome.
+            // uncertain state, record the DURABLE cancellation intent, and
+            // escalate; never persist a definite outcome.
             await this.deps.bookingState.updateAppointmentOutcome(appointment!.id, { status: "unresolved" });
+            await this.deps.bookingState.markCancelRequested(conversationId, "provider cancel response lost");
             await this.deps.audit?.append({
               actorType: "system", actorId: null, action: "booking.cancel_unresolved",
               entityType: "appointments", entityId: appointment?.id ?? null,
@@ -659,6 +712,7 @@ export class BookingService {
       }
     }
   }
+
 
   private hashOfferToken(token: string): string {
     return createHmac("sha256", this.deps.tokenHashSecret).update(token, "utf8").digest("hex");

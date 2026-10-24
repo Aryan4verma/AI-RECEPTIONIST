@@ -6,6 +6,7 @@ import {
   MemoryBusinessConfigRepo,
   MemoryConsentRepo,
   MemoryConversationRepo,
+  MemoryCustomerRepo,
 } from "../../db/memory/stores.js";
 import { toEnvelope } from "../../server/errors.js";
 import { AppError } from "../../server/errors.js";
@@ -194,6 +195,116 @@ function vi3spy(calendar: MockCalendarAdapter) {
   };
   return { keys };
 }
+
+describe("durable cancellation intent (live-DB correction)", () => {
+  async function confirmedHarness() {
+    const conversations = new MemoryConversationRepo();
+    const bookingState = new MemoryBookingStateRepo();
+    const calendar = new MockCalendarAdapter();
+    const audit = new MemoryAuditRepo();
+    const escalated: Array<{ id: string; reason: string }> = [];
+    const booking = new BookingService({
+      bookingState, calendar, tokenHashSecret: SECRET, offerTtlMinutes: 15,
+      audit, customers: new MemoryCustomerRepo(), conversations,
+      escalate: (id, reason) => {
+        escalated.push({ id, reason });
+        return Promise.resolve();
+      },
+    });
+    const started = await conversations.create({ channel: "text", accessTokenHash: "h" });
+    const offer = await booking.offer(started.id, slot);
+    const confirmed = await booking.confirm(started.id, offer.offerToken, "accept");
+    expect(confirmed.bookingState).toBe("CONFIRMED");
+    return { conversations, bookingState, calendar, audit, booking, escalated, id: started.id };
+  }
+
+  it("cancel-unresolved records durable intent; reconciliation RETRIES the cancellation, never re-confirms", async () => {
+    const h = await confirmedHarness();
+    // Provider loses the cancel response:
+    const originalCancel = h.calendar.cancelEvent.bind(h.calendar);
+    h.calendar.cancelEvent = async () => ({ status: "unresolved" });
+    await expect(h.booking.cancel(h.id)).rejects.toMatchObject({ code: "CALENDAR_UNAVAILABLE" });
+    const identity = (await h.bookingState.get(h.id))?.calendarIdempotencyKey ?? "";
+    expect((await h.bookingState.findAppointmentByIdempotencyKey(identity))?.status).toBe("unresolved");
+    // PROCESS RESTART: fresh service instance + healthy provider; the durable
+    // cancel intent survives in booking_state.
+    h.calendar.cancelEvent = originalCancel;
+    const fresh = new BookingService({
+      bookingState: h.bookingState, calendar: h.calendar, tokenHashSecret: SECRET,
+      offerTtlMinutes: 15, audit: h.audit,
+    });
+    const outcome = await fresh.reconcile(h.id);
+    // The event was found — but the durable cancel intent means it is CANCELLED
+    // again (idempotent), never re-confirmed:
+    expect(outcome).toBe("confirmed"); // event existed
+    const appt = await h.bookingState.findAppointmentByIdempotencyKey(identity);
+    expect(appt?.status).toBe("cancelled"); // cancellation intent honored
+    // The external status honors the cancellation even though the machine's
+    // CONFIRMED state is terminal:
+    expect(await fresh.publicStatus(h.id)).toBe("cancelled");
+  });
+
+  it("cancel-unresolved + verified-absent event -> cancellation completes as CANCELLED on reconcile", async () => {
+    const h = await confirmedHarness();
+    h.calendar.cancelEvent = async () => ({ status: "unresolved" });
+    await expect(h.booking.cancel(h.id)).rejects.toBeInstanceOf(AppError);
+    const identity = (await h.bookingState.get(h.id))?.calendarIdempotencyKey ?? "";
+    // Restart: the provider never received an effective cancel AND the event
+    // never landed (verified absence) — the cancel completes as CANCELLED:
+    h.calendar["events"].clear();
+    const fresh = new BookingService({
+      bookingState: h.bookingState, calendar: h.calendar, tokenHashSecret: SECRET,
+      offerTtlMinutes: 15, audit: h.audit,
+    });
+    const outcome = await fresh.reconcile(h.id);
+    expect(outcome).toBe("confirmed_absent");
+    // The machine's CONFIRMED state is terminal and cannot transition; the
+    // cancellation truth lives in the appointment record and external status:
+    expect((await h.bookingState.get(h.id))?.state).toBe("CONFIRMED");
+    expect((await h.bookingState.findAppointmentByIdempotencyKey(identity))?.status).toBe("cancelled");
+    expect(await fresh.publicStatus(h.id)).toBe("cancelled");
+  });
+
+  it("cancel-unresolved + inconclusive lookup stays unresolved with escalation (no false completion)", async () => {
+    const h = await confirmedHarness();
+    h.calendar.cancelEvent = async () => ({ status: "unresolved" });
+    await expect(h.booking.cancel(h.id)).rejects.toBeInstanceOf(AppError);
+    const identity = (await h.bookingState.get(h.id))?.calendarIdempotencyKey ?? "";
+    h.calendar.findByIdempotencyKey = async () => ({ status: "inconclusive" });
+    const fresh = new BookingService({
+      bookingState: h.bookingState, calendar: h.calendar, tokenHashSecret: SECRET,
+      offerTtlMinutes: 15, audit: h.audit,
+    });
+    const outcome = await fresh.reconcile(h.id);
+    expect(outcome).toBe("unresolved");
+    expect((await h.bookingState.findAppointmentByIdempotencyKey(identity))?.status).toBe("unresolved");
+    expect(h.escalated.length).toBeGreaterThan(0);
+  });
+
+  it("creation-unresolved WITHOUT cancel intent still re-confirms on found (unchanged behavior)", async () => {
+    const h = await confirmedHarness();
+    // Simulate a CREATION uncertainty (no cancel marker):
+    const identity = (await h.bookingState.get(h.id))?.calendarIdempotencyKey ?? "";
+    const state = await h.bookingState.get(h.id);
+    state!.state = "UNRESOLVED";
+    await h.calendar.cancelEvent((await h.bookingState.findAppointmentByIdempotencyKey(identity))!.googleEventId ?? "");
+    // Remove the event (creation uncertainty: may or may not exist):
+    h.calendar["events"].clear();
+    // It did land though — re-register it under the same identity:
+    await h.calendar.createEvent({
+      idempotencyKey: identity, start: slot.toISOString(),
+      end: new Date(slot.getTime() + 30 * 60_000).toISOString(),
+      summary: "landed", timezone: "UTC",
+    });
+    const fresh = new BookingService({
+      bookingState: h.bookingState, calendar: h.calendar, tokenHashSecret: SECRET,
+      offerTtlMinutes: 15, audit: h.audit,
+    });
+    const outcome = await fresh.reconcile(h.id);
+    expect(outcome).toBe("confirmed");
+    expect((await h.bookingState.findAppointmentByIdempotencyKey(identity))?.status).toBe("confirmed");
+  });
+});
 
 describe("recovery safety addendum: blocked recovery escalates honestly", () => {
   async function harnessWithAudit() {
