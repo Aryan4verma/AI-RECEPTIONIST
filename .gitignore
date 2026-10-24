@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+sidecar/whisper/.venv/
+sidecar/whisper/__pycache__/

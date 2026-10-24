@@ -1,0 +1,33 @@
+{
+  "name": "ai-receptionist-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI Receptionist backend + AI capabilities (backend phase)",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@fastify/rate-limit": "^10.2.0",
+    "@supabase/supabase-js": "^2.48.0",
+    "dotenv": "^16.4.5",
+    "fastify": "^5.2.0",
+    "pg": "^8.13.1",
+    "pino": "^9.6.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
