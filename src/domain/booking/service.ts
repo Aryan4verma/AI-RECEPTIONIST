@@ -416,15 +416,40 @@ export class BookingService {
         if (cancelIntent && appointment && appointment.status !== "cancelled") {
           const retry = await this.deps.calendar.cancelEvent(search.eventId);
           if (retry.status === "cancelled") {
-            await this.deps.bookingState.updateAppointmentOutcome(appointment.id, { status: "cancelled" });
+            await this.deps.bookingState.updateAppointmentOutcome(appointment.id, {
+              status: "cancelled",
+              googleEventId: search.eventId,
+            });
             await this.deps.audit?.append({
               actorType: "system", actorId: null, action: "booking.cancel_completed_on_reconcile",
               entityType: "appointments", entityId: appointment.id,
               detail: { identity, eventId: search.eventId },
             });
+            // The cancellation is complete: an UNRESOLVED machine state
+            // transitions to its CANCELLED terminal; a CONFIRMED-terminal
+            // booking keeps its machine state with the appointment record and
+            // external status carrying the truth. Either way the outcome is
+            // NEVER "confirmed" — the customer's cancellation stands.
+            if (state.state === "UNRESOLVED") {
+              await this.deps.bookingState.transition({
+                conversationId, expectedState: "UNRESOLVED", event: "CUSTOMER_CANCELLED",
+                patch: { lastReconciledAt: now, lastError: null },
+              });
+            }
+            return "confirmed_absent";
           }
-          // cancelled/unresolved retry outcomes keep the appointment out of
-          // confirmed state either way — the customer's intent stands.
+          // Retry unresolved or failed: uncertainty is PRESERVED — refresh the
+          // durable intent, escalate, and return unresolved. Never transition
+          // to CONFIRMED and never return "confirmed".
+          await this.deps.bookingState.updateAppointmentOutcome(appointment.id, { status: "unresolved" });
+          await this.deps.bookingState.markCancelRequested(conversationId, `retry ${retry.status}`);
+          await this.deps.audit?.append({
+            actorType: "system", actorId: null, action: "booking.cancel_retry_unresolved",
+            entityType: "appointments", entityId: appointment.id,
+            detail: { identity, retryStatus: retry.status },
+          });
+          await this.deps.escalate?.(conversationId, `cancellation retry ${retry.status}`);
+          return "unresolved";
         } else if (appointment && appointment.status !== "cancelled") {
           // Race guard: a customer/admin cancellation is never silently
           // re-confirmed by a concurrent reconciliation.

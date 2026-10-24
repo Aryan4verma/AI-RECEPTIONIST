@@ -1,0 +1,82 @@
+import { describe, expect, it } from "vitest";
+import { classifyPgAuthError, verify } from "./verify-live-db.mjs";
+
+describe("classifyPgAuthError (repair finding 1: username vs password)", () => {
+  it("classifies a plain-postgres attempt as a USERNAME format problem", () => {
+    const result = classifyPgAuthError('password authentication failed for user "postgres"');
+    expect(result.kind).toBe("username");
+    expect(result.hint).toContain("postgres.ogxdszjypswutekqgorb");
+  });
+
+  it("classifies a correct-pooler-user attempt as a PASSWORD problem", () => {
+    const result = classifyPgAuthError(
+      'password authentication failed for user "postgres.ogxdszjypswutekqgorb"',
+    );
+    expect(result.kind).toBe("password");
+    expect(result.hint).toContain("database password is incorrect");
+  });
+
+  it("never echoes credential values and handles unparseable messages", () => {
+    const secretShaped = "password authentication failed for user \"postgres\" real=sup3rs3cret";
+    const result = classifyPgAuthError(secretShaped);
+    expect(result.hint).not.toContain("sup3rs3cret");
+    const fallback = classifyPgAuthError("something entirely different");
+    expect(fallback.kind).toBe("username");
+    expect(fallback.hint).toContain("unknown");
+  });
+});
+
+describe("verify() check contract (repair finding 1: no shared mutable state)", () => {
+  const fakePool = (resultRows) => ({ query: async () => ({ rows: resultRows }) });
+
+  const fullGreen = [
+    { name: "t1", rls: true },
+    { name: "t2", rls: true },
+    { name: "t3", rls: true },
+    { name: "t4", rls: true },
+    { name: "t5", rls: true },
+    { name: "t6", rls: true },
+    { name: "t7", rls: true },
+    { name: "t8", rls: true },
+    { name: "t9", rls: true },
+    { name: "t10", rls: true },
+    { name: "t11", rls: true },
+  ];
+
+  it("verify() executes the check sequence against a pool-like client and returns independent results", async () => {
+    // The sequence issues 6 queries; feed each a matching shape via a
+    // call-counting pool. Contract: results are independent objects.
+    const queries = [
+      fullGreen,
+      [{ version: "1" }, { version: "2" }, { version: "3" }, { version: "4" }, { version: "5" }, { version: "6" }],
+      [{ anon_select: false, auth_select: true, auth_insert_messages: false, svc_insert: true, svc_delete_audit: false }],
+      [{ tgname: "enforce_recording_consent", tgenabled: "O" }],
+      [{ proname: "is_app_admin", proconfig: ['search_path=""'] }, { proname: "enforce_recording_consent", proconfig: ['search_path=""'] }],
+      [{ customers: 0, conversations: 0, appointments: 0 }],
+    ];
+    let call = 0;
+    const pool = { query: async (q) => ({ rows: queries[call++] }) };
+    const checks = await verify(pool);
+    expect(checks).toHaveLength(6);
+    expect(checks.every((c) => c.ok)).toBe(true);
+    // Independence: mutating one result must not affect another
+    checks[0].detail = "mutated";
+    expect(checks[1].detail).not.toBe("mutated");
+  });
+
+  it("a failing check reports FAIL with its detail without throwing", async () => {
+    let call = 0;
+    const badRows = [
+      fullGreen.map((r) => ({ ...r, rls: false })), // RLS off -> FAIL
+      [{ version: "1" }],
+      [{ anon_select: false, auth_select: true, auth_insert_messages: false, svc_insert: true, svc_delete_audit: false }],
+      [{ tgname: "enforce_recording_consent", tgenabled: "O" }],
+      [{ proname: "is_app_admin", proconfig: ['search_path=""'] }, { proname: "enforce_recording_consent", proconfig: ['search_path=""'] }],
+      [{ customers: 0, conversations: 0, appointments: 0 }],
+    ];
+    const pool = { query: async () => ({ rows: badRows[call++] }) };
+    const checks = await verify(pool);
+    expect(checks[0].ok).toBe(false);
+    expect(checks[0].detail).toContain("0 with RLS");
+  });
+});
