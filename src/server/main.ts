@@ -4,6 +4,7 @@ import { createLogger } from "../observability/logger.js";
 import { createDbClients } from "../db/clients.js";
 import {
   PgAuditRepo,
+  PgCustomerRepo,
   PgBookingStateRepo,
   PgBusinessConfigRepo,
   PgConsentRepo,
@@ -62,6 +63,25 @@ export async function main(): Promise<void> {
     ollamaBase: env.OLLAMA_BASE_URL,
     conversationService,
     bookingService,
+    admin: {
+      verifyAdmin: async (token) => {
+        const { data, error } = await db.supabase.auth.getUser(token);
+        return error || !data?.user ? null : { userId: data.user.id };
+      },
+      isAdminMember: async (userId) => {
+        const { data } = await db.supabase
+          .from("app_admins")
+          .select("user_id")
+          .eq("user_id", userId)
+          .maybeSingle();
+        return data !== null;
+      },
+      config: new PgBusinessConfigRepo(db.pgPool),
+      customers: new PgCustomerRepo(db.pgPool),
+      conversations: new PgConversationRepo(db.pgPool),
+      appointments: new PgBookingStateRepo(db.pgPool),
+      audit,
+    },
   });
 
   const shutdown = async (signal: string) => {

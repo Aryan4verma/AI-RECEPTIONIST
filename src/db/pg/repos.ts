@@ -5,6 +5,8 @@ import { AppError } from "../../server/errors.js";
 import type {
   AuditEntry,
   AuditRepo,
+  CustomerRepo,
+  CustomerRow,
   BookingStateRepo,
   BookingStateRow,
   BusinessConfigRepo,
@@ -370,6 +372,57 @@ export class PgAuditRepo implements AuditRepo {
   }
 }
 
+export class PgCustomerRepo implements CustomerRepo {
+  constructor(private readonly pool: Pool) {}
+
+  async create(input: { displayName: string; contactEmail?: string; contactPhone?: string; notes?: string }): Promise<CustomerRow> {
+    const { rows } = await this.pool.query(
+      `insert into public.customers (display_name, contact_email, contact_phone, notes)
+       values ($1, $2, $3, $4)
+       returning id, display_name, contact_email, contact_phone, notes`,
+      [input.displayName, input.contactEmail ?? null, input.contactPhone ?? null, input.notes ?? null],
+    );
+    return mapCustomer(rows[0]);
+  }
+
+  async findById(id: string): Promise<CustomerRow | null> {
+    const { rows } = await this.pool.query(
+      `select id, display_name, contact_email, contact_phone, notes from public.customers where id = $1`,
+      [id],
+    );
+    return rows[0] ? mapCustomer(rows[0]) : null;
+  }
+
+  async list(limit = 50): Promise<CustomerRow[]> {
+    const { rows } = await this.pool.query(
+      `select id, display_name, contact_email, contact_phone, notes from public.customers order by created_at desc limit $1`,
+      [limit],
+    );
+    return rows.map(mapCustomer);
+  }
+
+  async anonymize(id: string): Promise<void> {
+    await this.pool.query(
+      `update public.customers set display_name = '[deleted customer]', contact_email = null,
+       contact_phone = null, notes = null, updated_at = now() where id = $1`,
+      [id],
+    );
+  }
+
+  async updateContact(id: string, patch: { contactEmail?: string | null; contactPhone?: string | null; displayName?: string; notes?: string | null }): Promise<void> {
+    await this.pool.query(
+      `update public.customers set
+         contact_email = coalesce($2, contact_email),
+         contact_phone = coalesce($3, contact_phone),
+         display_name = coalesce($4, display_name),
+         notes = coalesce($5, notes),
+         updated_at = now()
+       where id = $1`,
+      [id, patch.contactEmail ?? null, patch.contactPhone ?? null, patch.displayName ?? null, patch.notes ?? null],
+    );
+  }
+}
+
 export class PgBusinessConfigRepo implements BusinessConfigRepo {
   constructor(private readonly pool: Pool) {}
 
@@ -381,6 +434,24 @@ export class PgBusinessConfigRepo implements BusinessConfigRepo {
     if (!rows[0]) return null;
     return { content: rows[0].content as Record<string, unknown>, version: rows[0].version as number };
   }
+
+  async insertVersion(category: string, content: Record<string, unknown>, version: number, updatedBy: string | null): Promise<void> {
+    await this.pool.query(
+      `insert into public.business_config (category, content, version, updated_by) values ($1, $2, $3, $4)`,
+      [category, JSON.stringify(content), version, updatedBy],
+    );
+  }
+}
+
+
+function mapCustomer(r: Record<string, unknown>): CustomerRow {
+  return {
+    id: r.id as string,
+    displayName: r.display_name as string,
+    contactEmail: (r.contact_email as string | null) ?? null,
+    contactPhone: (r.contact_phone as string | null) ?? null,
+    notes: (r.notes as string | null) ?? null,
+  };
 }
 
 const BOOKING_STATE_SELECT =

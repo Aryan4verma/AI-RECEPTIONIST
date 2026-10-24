@@ -118,7 +118,7 @@ export interface BookingStateRepo {
   /** Persist the truthful outcome of a calendar operation (SEC-13). */
   updateAppointmentOutcome(
     appointmentId: string,
-    outcome: { status: "confirmed" | "unresolved" | "failed"; googleEventId?: string },
+    outcome: { status: "confirmed" | "unresolved" | "failed" | "cancelled"; googleEventId?: string },
   ): Promise<void>;
   findAppointmentByIdempotencyKey(
     idempotencyKey: string,
@@ -154,6 +154,24 @@ export interface AuditRepo {
   append(entry: AuditEntry): Promise<void>;
 }
 
+export interface CustomerRow {
+  id: string;
+  displayName: string;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  notes: string | null;
+}
+
+export interface CustomerRepo {
+  create(input: { displayName: string; contactEmail?: string; contactPhone?: string; notes?: string }): Promise<CustomerRow>;
+  findById(id: string): Promise<CustomerRow | null>;
+  list(limit?: number): Promise<CustomerRow[]>;
+  /** Irreversible per the approved policy: anonymize personal fields, keep the row. */
+  anonymize(id: string): Promise<void>;
+  updateContact(id: string, patch: { contactEmail?: string | null; contactPhone?: string | null; displayName?: string; notes?: string | null }): Promise<void>;
+}
+
 export interface BusinessConfigRepo {
   latest(category: string): Promise<{ content: Record<string, unknown>; version: number } | null>;
+  insertVersion(category: string, content: Record<string, unknown>, version: number, updatedBy: string | null): Promise<void>;
 }

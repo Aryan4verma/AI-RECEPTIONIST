@@ -4,6 +4,8 @@ import { transition } from "../../domain/booking/machine.js";
 import type {
   AuditEntry,
   AuditRepo,
+  CustomerRepo,
+  CustomerRow,
   BookingStateRepo,
   BookingStateRow,
   BusinessConfigRepo,
@@ -271,6 +273,44 @@ export class MemoryConsentRepo implements ConsentRepo {
   }
 }
 
+export class MemoryCustomerRepo implements CustomerRepo {
+  readonly rows: CustomerRow[] = [];
+  async create(input: { displayName: string; contactEmail?: string; contactPhone?: string; notes?: string }): Promise<CustomerRow> {
+    const row: CustomerRow = {
+      id: randomUUID(),
+      displayName: input.displayName,
+      contactEmail: input.contactEmail ?? null,
+      contactPhone: input.contactPhone ?? null,
+      notes: input.notes ?? null,
+    };
+    this.rows.push(row);
+    return row;
+  }
+  async findById(id: string): Promise<CustomerRow | null> {
+    return this.rows.find((r) => r.id === id) ?? null;
+  }
+  async list(limit = 50): Promise<CustomerRow[]> {
+    return this.rows.slice(-limit);
+  }
+  async anonymize(id: string): Promise<void> {
+    const row = this.rows.find((r) => r.id === id);
+    if (row) {
+      row.displayName = "[deleted customer]";
+      row.contactEmail = null;
+      row.contactPhone = null;
+      row.notes = null;
+    }
+  }
+  async updateContact(id: string, patch: { contactEmail?: string | null; contactPhone?: string | null; displayName?: string; notes?: string | null }): Promise<void> {
+    const row = this.rows.find((r) => r.id === id);
+    if (!row) throw new Error("customer not found");
+    if (patch.contactEmail !== undefined) row.contactEmail = patch.contactEmail;
+    if (patch.contactPhone !== undefined) row.contactPhone = patch.contactPhone;
+    if (patch.displayName !== undefined) row.displayName = patch.displayName;
+    if (patch.notes !== undefined) row.notes = patch.notes;
+  }
+}
+
 export class MemoryAuditRepo implements AuditRepo {
   readonly entries: AuditEntry[] = [];
   async append(entry: AuditEntry): Promise<void> {
@@ -282,5 +322,8 @@ export class MemoryBusinessConfigRepo implements BusinessConfigRepo {
   constructor(private readonly data: Record<string, { content: Record<string, unknown>; version: number }> = {}) {}
   async latest(category: string) {
     return this.data[category] ?? null;
+  }
+  async insertVersion(category: string, content: Record<string, unknown>, version: number, _updatedBy: string | null): Promise<void> {
+    this.data[category] = { content, version };
   }
 }

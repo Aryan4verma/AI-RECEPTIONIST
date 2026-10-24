@@ -1,0 +1,63 @@
+import type { BusinessConfigRepo } from "../../db/ports.js";
+
+export interface KnowledgeAnswer {
+  /** Grounded, verbatim from configuration — never model-generated text. */
+  answer: string | null;
+  matched: boolean;
+}
+
+interface FaqEntry {
+  question?: unknown;
+  answer?: unknown;
+  keywords?: unknown;
+}
+
+/**
+ * Deterministic FAQ retrieval over configured business knowledge (FR-4).
+ * Answers are returned VERBATIM from configuration — the local model is never
+ * used to compose business facts, so fabrication is structurally impossible.
+ * No match → explicit fallback (safe refusal + escalation path), never an
+ * invented answer.
+ */
+export class KnowledgeService {
+  constructor(private readonly config: BusinessConfigRepo) {}
+
+  async answer(question: string): Promise<KnowledgeAnswer> {
+    const faqs = await this.config.latest("faqs");
+    if (!faqs) return { answer: null, matched: false };
+    const entries = Array.isArray(faqs.content["entries"]) ? (faqs.content["entries"] as FaqEntry[]) : [];
+    const queryTokens = tokenize(question);
+    let best: { score: number; answer: string } | null = null;
+    for (const entry of entries) {
+      if (typeof entry.answer !== "string" || entry.answer.length === 0) continue;
+      const keywords =
+        Array.isArray(entry.keywords) && entry.keywords.every((k) => typeof k === "string")
+          ? (entry.keywords as string[])
+          : tokenize(typeof entry.question === "string" ? entry.question : "");
+      if (keywords.length === 0) continue;
+      const overlap = keywords.filter((k) => queryTokens.includes(k)).length;
+      const score = overlap / keywords.length;
+      if (score > 0 && (!best || score > best.score)) {
+        best = { score, answer: entry.answer };
+      }
+    }
+    return best ? { answer: best.answer, matched: true } : { answer: null, matched: false };
+  }
+
+  fallback(): string {
+    return "I don't have that information right now — I've noted your question for a colleague who can help.";
+  }
+}
+
+function tokenize(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length > 2 && !STOPWORDS.has(t));
+}
+
+const STOPWORDS = new Set([
+  "the", "and", "for", "you", "your", "with", "what", "when", "where", "how",
+  "can", "does", "did", "are", "was", "were", "have", "has", "this", "that",
+  "our", "from", "about", "into", "please", "hello", "there",
+]);

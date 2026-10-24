@@ -10,6 +10,9 @@ import type {
 import { generateConversationToken, hashConversationToken } from "../../auth/conversationToken.js";
 import { intentSchema, type IntentResult } from "../../ai/schemas.js";
 import type { LLMProvider, StructuredRequest } from "../../ai/types.js";
+import type { BookingStateRepo } from "../../db/ports.js";
+import { emptyExtraction, type ExtractionService } from "../extraction/service.js";
+import type { KnowledgeService } from "../knowledge/service.js";
 
 export interface ConversationDeps {
   conversations: ConversationRepo;
@@ -18,6 +21,11 @@ export interface ConversationDeps {
   config: BusinessConfigRepo;
   provider: LLMProvider;
   tokenHashSecret: string;
+  /** FR-3 extraction pipeline — optional for minimal compositions/tests. */
+  extraction?: ExtractionService;
+  bookingState?: BookingStateRepo;
+  /** FR-4 deterministic FAQ knowledge — optional. */
+  knowledge?: KnowledgeService;
 }
 
 export interface StartedConversation {
@@ -100,6 +108,59 @@ export class ConversationService {
 
   async recordAssistantMessage(conversationId: string, content: string): Promise<void> {
     await this.deps.conversations.insertMessage({ conversationId, role: "assistant", content });
+  }
+
+  /**
+   * Full customer turn orchestration (FR-1/2/3/4/12): classify intent, then
+   * route — booking → FR-3 extraction pipeline, question → FR-4 grounded FAQ,
+   * human request → escalation, else clarification. The reply is backend-
+   * authored; model output only feeds validated structures.
+   */
+  async handleCustomerTurn(
+    conversation: ConversationRow,
+    text: string,
+  ): Promise<{ reply: string; intent: IntentResult["intent"]; extractionComplete: boolean | null }> {
+    const intent = await this.classifyIntent(conversation, text);
+    let reply: string;
+    let extractionComplete: boolean | null = null;
+
+    if (intent.intent === "book_appointment" && this.deps.extraction && this.deps.bookingState) {
+      const state = await this.deps.bookingState.ensure(conversation.id);
+      const current = Object.keys(state.extracted).length > 0
+        ? ({ ...emptyExtraction(), ...(state.extracted as object) } as Parameters<ExtractionService["merge"]>[0])
+        : null;
+      const merged = await this.deps.extraction.mergeTurn(current, text);
+      await this.deps.bookingState.transition({
+        conversationId: conversation.id,
+        expectedState: state.state,
+        event: state.state === "COLLECT_DETAILS" ? "DETAILS_COMPLETE" : "VALIDATION_PASSED",
+        patch: { extracted: merged as unknown as Record<string, unknown> },
+      }).catch(() => undefined); // offer/confirm stages own later transitions
+      const missing = this.deps.extraction.missingFields(merged);
+      extractionComplete = missing.length === 0;
+      reply = extractionComplete
+        ? "Thank you — I have everything I need. Let me check availability for you."
+        : this.deps.extraction.followUp(missing) ?? "Could you tell me a bit more?";
+    } else if (intent.intent === "ask_question" && this.deps.knowledge) {
+      const answer = await this.deps.knowledge.answer(text);
+      reply = answer.matched && answer.answer ? answer.answer : this.deps.knowledge.fallback();
+    } else if (intent.intent === "request_human") {
+      await this.escalate(conversation.id, "customer requested human");
+      reply = "Understood — I'm marking this conversation for a human colleague.";
+    } else {
+      const replies: Record<string, string> = {
+        book_appointment: "I can help you book an appointment. Could you tell me the purpose and your preferred time?",
+        cancel_appointment: "I can help cancel an appointment. Please confirm which appointment.",
+        reschedule_appointment: "I can help reschedule. What new time works for you?",
+        greeting: "Hello! How can I help you today?",
+        chitchat: "I'm here to help with bookings and business questions.",
+        unknown: "Sorry, I didn't quite understand. Could you rephrase that?",
+      };
+      reply = replies[intent.intent] ?? "Sorry, I didn't quite understand. Could you rephrase that?";
+    }
+
+    await this.recordAssistantMessage(conversation.id, reply);
+    return { reply, intent: intent.intent, extractionComplete };
   }
 
   /** Escalation (FR-12): mark conversation for human review, never silently dropped. */

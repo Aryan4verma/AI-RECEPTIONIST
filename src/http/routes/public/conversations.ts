@@ -47,23 +47,13 @@ export function registerConversationRoutes(app: FastifyInstance, deps: Conversat
     }
     const body = messageBody.parse(request.body);
     await deps.conversationService.recordCustomerMessage(conversation.id, body.text);
-    const intent = await deps.conversationService.classifyIntent(conversation, body.text);
-    const replies: Record<string, string> = {
-      book_appointment: "I can help you book an appointment. Could you tell me the purpose and your preferred time?",
-      cancel_appointment: "I can help cancel an appointment. Please confirm which appointment.",
-      reschedule_appointment: "I can help reschedule. What new time works for you?",
-      ask_question: "Let me look that up for you.",
-      greeting: "Hello! How can I help you today?",
-      chitchat: "I'm here to help with bookings and business questions.",
-      request_human: "Understood — I'm marking this conversation for a human colleague.",
-      unknown: "Sorry, I didn't quite understand. Could you rephrase that?",
+    const turn = await deps.conversationService.handleCustomerTurn(conversation, body.text);
+    return {
+      reply: turn.reply,
+      intent: turn.intent,
+      extractionComplete: turn.extractionComplete,
+      conversationState: turn.intent === "request_human" ? "escalated" : conversation.status,
     };
-    const replyText = replies[intent.intent] ?? "Sorry, I didn't quite understand. Could you rephrase that?";
-    await deps.conversationService.recordAssistantMessage(conversation.id, replyText);
-    if (intent.intent === "request_human") {
-      await deps.conversationService.escalate(conversation.id, "customer requested human");
-    }
-    return { reply: replyText, intent: intent.intent, conversationState: intent.intent === "request_human" ? "escalated" : conversation.status };
   });
 
   app.post("/api/v1/conversations/:id/consent", async (request) => {

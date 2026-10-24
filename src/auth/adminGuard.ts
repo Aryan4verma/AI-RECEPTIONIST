@@ -1,26 +1,30 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { AppError } from "../server/errors.js";
 
 export interface AdminPrincipal {
   userId: string;
 }
 
+export type AdminVerifier = (token: string) => Promise<{ userId: string } | null>;
+
 interface MembershipCacheEntry {
   isMember: boolean;
   cachedAt: number;
 }
 
-const MEMBERSHIP_TTL_MS = 60_000; // AUTH.md §2: revocation effective within 60 s (DB layer is immediate)
+const MEMBERSHIP_TTL_MS = 60_000; // AUTH.md §2: revocation effective ≤ 60 s (DB layer immediate)
 
 /**
- * Admin authentication + authorization for /admin routes.
- * Verification: supabase.auth.getUser() performs trusted issuer/audience/expiry
- * validation server-side (AUTH.md §2 — getUser is used where session freshness
- * matters). Authorization: membership in app_admins, checked per request with a
- * 60 s in-process freshness cache. RLS is a second layer, never the only one.
+ * Admin authentication + authorization for /admin routes (AUTH.md §2/§4).
+ * Identity verification is injected (production: Supabase Auth getUser;
+ * tests: a stub) so the guard is contract-testable without live credentials.
+ * Authorization is the app_admins membership check with a 60 s freshness
+ * cache — independent of RLS, which remains a second layer.
  */
-export function createAdminGuard(supabase: SupabaseClient) {
+export function createAdminGuard(deps: {
+  verify: AdminVerifier;
+  isMember: (userId: string) => Promise<boolean>;
+}) {
   const cache = new Map<string, MembershipCacheEntry>();
 
   return async function adminGuard(request: FastifyRequest, _reply: FastifyReply): Promise<void> {
@@ -30,11 +34,11 @@ export function createAdminGuard(supabase: SupabaseClient) {
     }
     const token = header.slice("Bearer ".length).trim();
 
-    const { data, error } = await supabase.auth.getUser(token);
-    if (error || !data?.user) {
+    const verified = await deps.verify(token);
+    if (!verified) {
       throw new AppError("UNAUTHORIZED", "Invalid or expired session.");
     }
-    const userId = data.user.id;
+    const userId = verified.userId;
 
     const cached = cache.get(userId);
     const now = Date.now();
@@ -42,16 +46,9 @@ export function createAdminGuard(supabase: SupabaseClient) {
     if (cached && now - cached.cachedAt < MEMBERSHIP_TTL_MS) {
       isMember = cached.isMember;
     } else {
-      const { data: row, error: dbError } = await supabase
-        .from("app_admins")
-        .select("user_id")
-        .eq("user_id", userId)
-        .maybeSingle();
-      if (dbError) throw new AppError("INTERNAL", "Authorization backend failure.");
-      isMember = row !== null;
+      isMember = await deps.isMember(userId);
       cache.set(userId, { isMember, cachedAt: now });
     }
-
     if (!isMember) {
       throw new AppError("FORBIDDEN", "Administrator membership required.");
     }

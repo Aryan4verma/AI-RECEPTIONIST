@@ -2,13 +2,16 @@ import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import rateLimit from "@fastify/rate-limit";
 import type { Env } from "../config/env.js";
 import type { Logger } from "../observability/logger.js";
-import { toEnvelope } from "./errors.js";
+import { AppError, toEnvelope } from "./errors.js";
 import { registerHealthRoutes, type HealthDeps } from "./health.js";
 import { registerConversationRoutes, type ConversationRouteDeps } from "../http/routes/public/conversations.js";
+import { registerAdminRoutes, type AdminRouteDeps } from "../http/routes/admin/index.js";
 
 export interface AppDeps extends HealthDeps, ConversationRouteDeps {
   env: Env;
   logger: Logger;
+  /** Present in production composition; tests may omit admin routes. */
+  admin?: AdminRouteDeps;
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -33,9 +36,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.setErrorHandler((err, request, reply) => {
     const envelope = toEnvelope(err, request.id);
     const rawStatus = (err as { statusCode?: unknown }).statusCode;
-    const status = typeof rawStatus === "number" && rawStatus >= 400 && rawStatus <= 599
-      ? rawStatus
-      : statusFor(envelope.error.code);
+    // AppError carries its canonical HTTP status; framework errors carry
+    // statusCode; anything else falls back to the code table.
+    const status = err instanceof AppError
+      ? err.status
+      : typeof rawStatus === "number" && rawStatus >= 400 && rawStatus <= 599
+        ? rawStatus
+        : statusFor(envelope.error.code);
     // Full diagnostics stay server-side (pino redaction applies); the client
     // receives only the safe envelope (quality correction 3).
     deps.logger.warn(
@@ -53,6 +60,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   registerHealthRoutes(app, deps);
   registerConversationRoutes(app, deps);
+  if (deps.admin) registerAdminRoutes(app, deps.admin);
 
   return app;
 }
