@@ -35,10 +35,11 @@ export async function main(): Promise<void> {
   const db = createDbClients(env);
 
   const provider = new OllamaProvider(env.OLLAMA_BASE_URL, INITIAL_LOCAL_MODEL);
+  const audit = new PgAuditRepo(db.pgPool);
   const conversationService = new ConversationService({
     conversations: new PgConversationRepo(db.pgPool),
     consent: new PgConsentRepo(db.pgPool),
-    audit: new PgAuditRepo(db.pgPool),
+    audit,
     config: new PgBusinessConfigRepo(db.pgPool),
     provider,
     tokenHashSecret: env.TOKEN_HASH_SECRET,
@@ -50,6 +51,8 @@ export async function main(): Promise<void> {
     calendar: new MockCalendarAdapter(),
     tokenHashSecret: env.TOKEN_HASH_SECRET,
     offerTtlMinutes: 15,
+    audit,
+    escalate: (conversationId, reason) => conversationService.escalate(conversationId, reason),
   });
 
   const app = await buildApp({

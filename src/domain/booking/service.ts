@@ -11,6 +11,12 @@ export interface BookingServiceDeps {
   offerTtlMinutes: number;
   /** Optional audit sink — required for honest recovery escalation records. */
   audit?: AuditRepo;
+  /**
+   * Admin-visible escalation hook (recovery addendum B): invoked when recovery
+   * is blocked or reconciliation exhausts — the production composition wires
+   * this to the conversation escalation path so operators see it.
+   */
+  escalate?: (conversationId: string, reason: string) => Promise<void>;
 }
 
 export interface OfferedSlot {
@@ -388,18 +394,18 @@ export class BookingService {
           (open.timezone === "UTC" ||
             (Intl.supportedValuesOf("timeZone") as readonly string[]).includes(open.timezone));
         if (search.status !== "verified_absent" || !dataComplete) {
+          const reason =
+            search.status === "inconclusive" ? "absence not verifiable" : "authoritative appointment data missing";
           await this.deps.audit?.append({
             actorType: "system",
             actorId: null,
             action: "booking.recovery_blocked",
             entityType: "booking_state",
             entityId: conversationId,
-            detail: {
-              reason: search.status === "inconclusive" ? "absence not verifiable" : "authoritative appointment data missing",
-              identity,
-            },
+            detail: { reason, identity },
           });
-          return "unresolved"; // preserve the unresolved operation; escalated via audit
+          await this.deps.escalate?.(conversationId, `booking recovery blocked: ${reason}`);
+          return "unresolved"; // preserve the unresolved operation; escalated
         }
         await this.deps.bookingState.transition({
           conversationId, expectedState: "CREATE_EVENT", event: "CREATE_CONFIRMED", patch: { lastReconciledAt: now },
@@ -449,10 +455,33 @@ export class BookingService {
           conversationId, expectedState: "UNRESOLVED", event: "RECONCILIATION_EXHAUSTED",
           patch: { reconciliationAttempts: state.reconciliationAttempts + 1, lastReconciledAt: now },
         });
+        if ((state.reconciliationAttempts + 1) % 3 === 0) {
+          await this.deps.escalate?.(conversationId, "booking unresolved after repeated reconciliation");
+        }
       }
       return "unresolved";
     } catch {
       return "unresolved";
+    }
+  }
+
+  /**
+   * External booking status for customer-facing endpoints (recovery addendum B):
+   * internal recovery states (CREATE_EVENT, VERIFY_RESULT) never leak — they
+   * map to the same external "pending" bucket as UNRESOLVED.
+   */
+  async publicStatus(conversationId: string): Promise<"confirmed" | "pending" | "none"> {
+    const state = await this.deps.bookingState.ensure(conversationId);
+    switch (state.state) {
+      case "CONFIRMED":
+        return "confirmed";
+      case "AWAIT_CONFIRMATION":
+      case "CREATE_EVENT":
+      case "VERIFY_RESULT":
+      case "UNRESOLVED":
+        return "pending";
+      default:
+        return "none";
     }
   }
 

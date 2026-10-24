@@ -98,8 +98,10 @@ export function registerConversationRoutes(app: FastifyInstance, deps: Conversat
 
   app.get("/api/v1/conversations/:id", async (request) => {
     const conversation = await requireConversation(request);
+    const booking = await deps.bookingService.publicStatus(conversation.id);
     return {
       status: conversation.status,
+      booking,
       consentRecording: conversation.consentRecording,
       startedAt: conversation.startedAt.toISOString(),
     };
