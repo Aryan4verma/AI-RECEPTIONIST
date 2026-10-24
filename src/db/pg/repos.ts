@@ -78,6 +78,22 @@ export class PgConversationRepo implements ConversationRepo {
     );
     return rows.map(mapConversation);
   }
+
+  async findById(id: string): Promise<ConversationRow | null> {
+    const { rows } = await this.pool.query(
+      `select id, customer_id, channel, status, access_token_hash, consent_recording, started_at
+       from public.conversations where id = $1`,
+      [id],
+    );
+    return rows[0] ? mapConversation(rows[0]) : null;
+  }
+
+  async updateCustomer(id: string, customerId: string): Promise<void> {
+    await this.pool.query(
+      `update public.conversations set customer_id = $2 where id = $1`,
+      [id, customerId],
+    );
+  }
 }
 
 const BOOKING_PATCH_COLUMNS: Partial<Record<string, string>> = {
@@ -237,12 +253,13 @@ export class PgBookingStateRepo implements BookingStateRepo {
       );
       const inserted = await client.query(
         `insert into public.appointments
-          (conversation_id, idempotency_key, scheduled_start, scheduled_end, duration_minutes,
+          (conversation_id, customer_id, idempotency_key, scheduled_start, scheduled_end, duration_minutes,
            timezone, status, service_type, purpose, meeting_type, notes)
-         values ($1, $2, $3, $4, $5, $6, 'pending_confirmation', $7, $8, $9, $10)
+         values ($1, $2, $3, $4, $5, $6, $7, 'pending_confirmation', $8, $9, $10, $11)
          returning id`,
         [
-          input.conversationId, input.idempotencyKey, input.scheduledStart, input.scheduledEnd,
+          input.conversationId, (input as { customerId?: string }).customerId ?? null,
+          input.idempotencyKey, input.scheduledStart, input.scheduledEnd,
           input.durationMinutes, input.timezone, input.serviceType ?? null, input.purpose ?? null,
           input.meetingType ?? null, input.notes ?? null,
         ],

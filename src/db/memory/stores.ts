@@ -76,6 +76,15 @@ export class MemoryConversationRepo implements ConversationRepo {
   async list(limit = 50): Promise<ConversationRow[]> {
     return [...this.rows.values()].slice(-limit);
   }
+
+  async findById(id: string): Promise<ConversationRow | null> {
+    return this.rows.get(id) ?? null;
+  }
+
+  async updateCustomer(id: string, customerId: string): Promise<void> {
+    const row = this.rows.get(id);
+    if (row) row.customerId = customerId;
+  }
 }
 
 export class MemoryBookingStateRepo implements BookingStateRepo {
@@ -153,6 +162,7 @@ export class MemoryBookingStateRepo implements BookingStateRepo {
   async registerAppointment(input: {
     conversationId: string;
     expectedState: BookingState;
+    customerId?: string;
     idempotencyKey: string;
     scheduledStart: Date;
     scheduledEnd: Date;
@@ -174,6 +184,7 @@ export class MemoryBookingStateRepo implements BookingStateRepo {
     this.appointments.push({
       id,
       conversationId: input.conversationId,
+      customerId: input.customerId,
       idempotencyKey: input.idempotencyKey,
       scheduledStart: input.scheduledStart,
       scheduledEnd: input.scheduledEnd,

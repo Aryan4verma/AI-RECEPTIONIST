@@ -3,6 +3,7 @@ import rateLimit from "@fastify/rate-limit";
 import type { Env } from "../config/env.js";
 import type { Logger } from "../observability/logger.js";
 import { AppError, toEnvelope } from "./errors.js";
+import { ZodError } from "zod";
 import { registerHealthRoutes, type HealthDeps } from "./health.js";
 import { registerConversationRoutes, type ConversationRouteDeps } from "../http/routes/public/conversations.js";
 import { registerAdminRoutes, type AdminRouteDeps } from "../http/routes/admin/index.js";
@@ -33,7 +34,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }),
   });
 
-  app.setErrorHandler((err, request, reply) => {
+  app.setErrorHandler((rawErr, request, reply) => {
+    // Route-level Zod validation failures are client errors (400 INVALID_INPUT)
+    // with server-only details — never 500, never echoed payload text.
+    const err = rawErr instanceof ZodError
+      ? new AppError(
+          "INVALID_INPUT",
+          "Invalid request payload.",
+          { issues: rawErr.issues.map((i) => `${i.path.join(".")}: ${i.message}`) },
+        )
+      : rawErr;
     const envelope = toEnvelope(err, request.id);
     const rawStatus = (err as { statusCode?: unknown }).statusCode;
     // AppError carries its canonical HTTP status; framework errors carry

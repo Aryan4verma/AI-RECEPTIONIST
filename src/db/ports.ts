@@ -61,6 +61,7 @@ export interface AuditEntry {
 export interface ConversationRepo {
   create(input: { channel: "text" | "voice"; accessTokenHash: string }): Promise<ConversationRow>;
   findByIdAndTokenHash(id: string, tokenHash: string): Promise<ConversationRow | null>;
+  findById(id: string): Promise<ConversationRow | null>;
   updateStatus(id: string, status: ConversationRow["status"]): Promise<void>;
   insertMessage(input: {
     conversationId: string;
@@ -70,6 +71,8 @@ export interface ConversationRepo {
   }): Promise<MessageRow>;
   listMessages(conversationId: string, limit?: number): Promise<MessageRow[]>;
   list(limit?: number): Promise<ConversationRow[]>;
+  /** Associate a customer record with a conversation (FR-10 linkage). */
+  updateCustomer(id: string, customerId: string): Promise<void>;
 }
 
 export interface BookingStateRepo {
@@ -106,6 +109,7 @@ export interface BookingStateRepo {
   registerAppointment(input: {
     conversationId: string;
     expectedState: BookingState;
+    customerId?: string;
     idempotencyKey: string;
     scheduledStart: Date;
     scheduledEnd: Date;

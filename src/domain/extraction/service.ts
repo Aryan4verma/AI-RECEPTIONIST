@@ -10,6 +10,17 @@ export type FieldName = "customer_name" | "contact" | "purpose" | "requested_tim
 // duration_minutes is intentionally NOT required: the authoritative business
 // configuration provides the default duration (FR-3/FR-14), so an unstated
 // duration never blocks the flow and is never guessed.
+/** All extractable fields — optional-but-known values always merge. */
+const ALL_FIELDS: FieldName[] = [
+  "customer_name",
+  "contact",
+  "purpose",
+  "requested_time",
+  "duration_minutes",
+  "meeting_type",
+];
+
+/** Fields the customer must provide — duration falls back to business config. */
 const REQUIRED_FIELDS: FieldName[] = [
   "customer_name",
   "contact",
@@ -96,7 +107,7 @@ export class ExtractionService {
     const base = current ?? emptyExtraction();
     const merged: ExtractionResult = { ...base, notes: turn.notes ?? base.notes };
     const target = merged as unknown as Record<string, unknown>;
-    for (const field of REQUIRED_FIELDS) {
+    for (const field of ALL_FIELDS) {
       const incoming = turn[field];
       const existing = base[field];
       if (incoming?.state === "known") {
@@ -137,15 +148,7 @@ export class ExtractionService {
         field: "requested_time",
       });
     }
-    // Offset-qualified RFC 3339 (…Z / ±hh:mm) is ALREADY absolute — use it as-is.
-    // A naive wall-clock value is interpreted ONCE in the business timezone
-    // with a two-pass conversion that stays correct across DST transitions.
-    let utc: Date;
-    if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(rawTime.trim())) {
-      utc = new Date(rawTime);
-    } else {
-      utc = zonedWallClockToUtc(rawTime, timezone);
-    }
+    const utc = zonedWallClockToUtc(rawTime, timezone);
     const durationMinutes =
       extracted.duration_minutes.state === "known"
         ? extracted.duration_minutes.value
@@ -206,21 +209,37 @@ export function emptyExtraction(): ExtractionResult {
 }
 
 /**
- * Interpret a naive wall-clock string in an IANA timezone and convert to UTC.
- * Two-pass: guess with the offset at the naive instant, recompute the offset
- * at the corrected instant — DST-safe (quality correction: timezone review).
+ * Convert an appointment time string to UTC, deterministically and
+ * independently of the server's local timezone (E2E hardening 3):
+ *  - Offset-qualified RFC 3339 (Z / ±hh:mm) is already absolute — used as-is
+ *    with no further shifting.
+ *  - Naive wall-clock values are interpreted ONCE in the given IANA timezone
+ *    via a two-pass conversion that stays correct across DST transitions.
+ *    DST gaps resolve forward; overlaps take the earlier occurrence — both
+ *    deterministic on any host.
+ *  - Unparseable input fails safely.
  */
-function zonedWallClockToUtc(wallClock: string, timezone: string): Date {
-  const parsed = new Date(wallClock.includes("T") ? wallClock : wallClock.replace(" ", "T") + "Z");
-  if (Number.isNaN(parsed.getTime())) {
+export function zonedWallClockToUtc(wallClock: string, timezone: string): Date {
+  const trimmed = wallClock.trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?\s*([zZ]|[+-]\d{2}:?\d{2})?$/.exec(trimmed);
+  if (!m) {
     throw new AppError("INVALID_INPUT", "The provided appointment time could not be interpreted.", {
       field: "requested_time",
     });
   }
-  let guess = parsed.getTime();
+  const [, y, mo, d, h, mi, s, offset] = m;
+  const asUtcDigits = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s ?? "0"));
+  if (offset) {
+    if (offset === "z" || offset === "Z") return new Date(asUtcDigits);
+    const sign = offset[0] === "-" ? -1 : 1;
+    const oh = Number(offset.slice(1, 3));
+    const om = Number(offset.slice(-2));
+    return new Date(asUtcDigits - sign * (oh * 60 + om) * 60_000);
+  }
+  let guess = asUtcDigits;
   for (let i = 0; i < 2; i++) {
     const offsetMinutes = tzOffsetMinutes(new Date(guess), timezone);
-    guess = parsed.getTime() - offsetMinutes * 60_000;
+    guess = asUtcDigits - offsetMinutes * 60_000;
   }
   return new Date(guess);
 }

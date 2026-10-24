@@ -1,6 +1,6 @@
 import { randomUUID, createHmac } from "node:crypto";
 import { AppError } from "../../server/errors.js";
-import type { AuditRepo, BookingStateRepo, CustomerRepo } from "../../db/ports.js";
+import type { AuditRepo, BookingStateRepo, ConversationRepo, CustomerRepo } from "../../db/ports.js";
 import type { CalendarProvider } from "../../calendar/types.js";
 import { isTerminal } from "./machine.js";
 
@@ -19,6 +19,8 @@ export interface BookingServiceDeps {
   escalate?: (conversationId: string, reason: string) => Promise<void>;
   /** Optional customer persistence — links collected contact details to a record (FR-10). */
   customers?: CustomerRepo;
+  /** Optional conversation repo — links the customer record to the conversation/appointment. */
+  conversations?: ConversationRepo;
 }
 
 export interface OfferedSlot {
@@ -99,6 +101,7 @@ export class BookingService {
     // FR-10: persist customer details collected during extraction (name +
     // contact) once an offer is extended — never fabricated, only what the
     // customer actually provided.
+    let customerId: string | undefined;
     if (this.deps.customers) {
       const name = start.extracted["customer_name"] as
         | { state: "known"; value: string }
@@ -112,12 +115,21 @@ export class BookingService {
         const contactValue = contact?.state === "known" ? contact.value : null;
         const email = typeof contactValue === "string" && contactValue.includes("@") ? contactValue : undefined;
         const phone = typeof contactValue === "string" && !contactValue.includes("@") ? contactValue : undefined;
-        await this.deps.customers.create({
-          displayName: name.value,
-          contactEmail: email,
-          contactPhone: phone,
-          notes: `conversation ${conversationId}`,
-        });
+        const conversationRow = this.deps.conversations ? await this.deps.conversations.findById(conversationId) : null;
+        if (conversationRow?.customerId) {
+          customerId = conversationRow.customerId; // already linked — no duplicate record
+        } else {
+          const created = await this.deps.customers.create({
+            displayName: name.value,
+            contactEmail: email,
+            contactPhone: phone,
+            notes: `conversation ${conversationId}`,
+          });
+          customerId = created.id;
+          if (this.deps.conversations) {
+            await this.deps.conversations.updateCustomer(conversationId, customerId);
+          }
+        }
       }
     }
     await this.deps.bookingState.transition({
@@ -148,6 +160,7 @@ export class BookingService {
     decision: "accept" | "decline",
   ): Promise<
     | { bookingState: "CONFIRMED"; appointmentId: string; eventId?: string }
+    | { bookingState: "CANCELLED" }
     | { bookingState: "REJECTED" }
     | { bookingState: "UNRESOLVED" }
     | { bookingState: "EXPIRED" }
@@ -177,6 +190,10 @@ export class BookingService {
       }
       if (!appointment) {
         throw new AppError("INTERNAL", "Confirmed booking record could not be loaded; reconciliation has been triggered.");
+      }
+      if (appointment.status === "cancelled") {
+        // Never return an active confirmed booking for a cancelled appointment.
+        return { bookingState: "CANCELLED" as const };
       }
       return {
         bookingState: "CONFIRMED",
@@ -260,6 +277,14 @@ export class BookingService {
       return { bookingState: "SLOT_TAKEN", reason: "slot was taken while awaiting confirmation" };
     }
 
+    // Customer linkage carried onto the appointment record (FR-10): the record
+    // was created and associated with the conversation at offer time.
+    let customerId: string | undefined;
+    if (this.deps.conversations) {
+      const conversationRow = await this.deps.conversations.findById(conversationId);
+      customerId = conversationRow?.customerId ?? undefined;
+    }
+
     const idempotencyKey = randomUUID();
     // Atomic registration: the RECHECK_PASSED transition, the durable identity,
     // and the appointment row commit together under the row lock — concurrent
@@ -268,6 +293,7 @@ export class BookingService {
     const { appointmentId } = await this.deps.bookingState.registerAppointment({
       conversationId,
       expectedState: "RECHECK_AVAILABILITY",
+      customerId,
       idempotencyKey,
       scheduledStart: slot,
       scheduledEnd: end,
@@ -496,8 +522,12 @@ export class BookingService {
    * internal recovery states (CREATE_EVENT, VERIFY_RESULT) never leak — they
    * map to the same external "pending" bucket as UNRESOLVED.
    */
-  async publicStatus(conversationId: string): Promise<"confirmed" | "pending" | "none"> {
+  async publicStatus(conversationId: string): Promise<"confirmed" | "pending" | "cancelled" | "none"> {
     const state = await this.deps.bookingState.ensure(conversationId);
+    if (state.state === "CONFIRMED" && state.calendarIdempotencyKey) {
+      const appt = await this.deps.bookingState.findAppointmentByIdempotencyKey(state.calendarIdempotencyKey);
+      if (appt?.status === "cancelled") return "cancelled"; // never an active confirmed booking
+    }
     switch (state.state) {
       case "CONFIRMED":
         return "confirmed";
@@ -549,10 +579,45 @@ export class BookingService {
 
   async cancel(conversationId: string): Promise<void> {
     const state = await this.deps.bookingState.ensure(conversationId);
-    if (isTerminal(state.state) || state.state === "UNRESOLVED") return; // idempotent no-op
+    if (state.state === "UNRESOLVED") return; // recovery governs; idempotent no-op here
+    if (isTerminal(state.state)) {
+      // CONFIRMED bookings carry a live calendar event — cancelling must reach
+      // the provider and sync the appointment record (hardening 4). Other
+      // terminals have no event to cancel.
+      if (state.state !== "CONFIRMED" || !state.calendarIdempotencyKey) return;
+      const appointment = await this.deps.bookingState.findAppointmentByIdempotencyKey(state.calendarIdempotencyKey);
+      if (appointment?.status === "cancelled") return; // idempotent
+      try {
+        const search = await this.deps.calendar.findByIdempotencyKey(state.calendarIdempotencyKey);
+        if (search.status === "found") {
+          const cancel = await this.deps.calendar.cancelEvent(search.eventId);
+          if (cancel.status === "failed") {
+            throw new AppError("CALENDAR_UNAVAILABLE", "The calendar could not cancel the event.", { reason: cancel.reason });
+          }
+        }
+      } catch (err) {
+        if (appointment) {
+          await this.deps.bookingState.updateAppointmentOutcome(appointment.id, { status: "unresolved" }).catch(() => undefined);
+        }
+        throw err; // consequential cancellation failures are never silent
+      }
+      if (appointment) {
+        await this.deps.bookingState.updateAppointmentOutcome(appointment.id, { status: "cancelled" });
+      }
+      return;
+    }
     await this.deps.bookingState.transition({
       conversationId, expectedState: state.state, event: "CUSTOMER_CANCELLED", patch: {},
     });
+    // Pre-confirmation cancellation: identity may exist (registered) — sync the
+    // appointment row truthfully when present.
+    const identity = state.calendarIdempotencyKey;
+    if (identity) {
+      const appointment = await this.deps.bookingState.findAppointmentByIdempotencyKey(identity);
+      if (appointment) {
+        await this.deps.bookingState.updateAppointmentOutcome(appointment.id, { status: "cancelled" });
+      }
+    }
   }
 
   private hashOfferToken(token: string): string {
