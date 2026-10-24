@@ -135,10 +135,14 @@ export class ConversationService {
     if (intent.intent === "book_appointment" && this.deps.extraction && this.deps.bookingState) {
       const state = await this.deps.bookingState.ensure(conversation.id);
       if (state.state === "AWAIT_CONFIRMATION") {
-        return { reply: "You have a proposed appointment awaiting your confirmation — shall I book it?", intent: intent.intent, extractionComplete: true };
+        const reply = "You have a proposed appointment awaiting your confirmation — shall I book it?";
+        await this.recordAssistantMessage(conversation.id, reply);
+        return { reply, intent: intent.intent, extractionComplete: true };
       }
       if (state.state === "UNRESOLVED" || state.state === "CREATE_EVENT" || state.state === "VERIFY_RESULT") {
-        return { reply: "Your booking is being verified; you will be contacted once confirmed.", intent: intent.intent, extractionComplete: true };
+        const reply = "Your booking is being verified; you will be contacted once confirmed.";
+        await this.recordAssistantMessage(conversation.id, reply);
+        return { reply, intent: intent.intent, extractionComplete: true };
       }
       const current = Object.keys(state.extracted).length > 0
         ? ({ ...emptyExtraction(), ...(state.extracted as object) } as Parameters<ExtractionService["merge"]>[0])
@@ -166,6 +170,7 @@ export class ConversationService {
             dateStyle: "full", timeStyle: "short", timeZone: resolved.timezone,
           }).format(new Date(offer.start));
           reply = `I can offer ${when} (${resolved.durationMinutes} minutes, ${resolved.timezone}). Shall I book it?`;
+          await this.recordAssistantMessage(conversation.id, reply);
           return {
             reply,
             intent: intent.intent,

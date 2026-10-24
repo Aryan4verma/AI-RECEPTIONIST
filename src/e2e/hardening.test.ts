@@ -94,18 +94,41 @@ describe("naive wall-clock parsing (server-timezone independent, DST-aware)", ()
     expect(zonedWallClockToUtc("2026-01-15T15:00:00", "Europe/Berlin").toISOString()).toBe("2026-01-15T14:00:00.000Z");
   });
 
-  it("DST gap and overlap resolve deterministically (never NaN)", () => {
-    // Spring-forward gap (02:30 local does not exist in Berlin on 2026-03-29):
-    const gap = zonedWallClockToUtc("2026-03-29T02:30:00", "Europe/Berlin");
-    expect(Number.isNaN(gap.getTime())).toBe(false);
-    // Fall-back overlap (02:30 occurs twice on 2026-10-25):
-    const overlap = zonedWallClockToUtc("2026-10-25T02:30:00", "Europe/Berlin");
-    // Deterministic: the two-pass from the naive-as-UTC reference resolves to
-    // the post-transition (later) occurrence — documented behavior.
-    expect(overlap.toISOString()).toBe("2026-10-25T01:30:00.000Z");
-    // Determinism: identical inputs produce identical outputs
-    expect(zonedWallClockToUtc("2026-10-25T02:30:00", "Europe/Berlin").toISOString())
-      .toBe(overlap.toISOString());
+  it("DST gap and overlap are REJECTED with explicit customer-facing behavior (final safety check 4)", () => {
+    // Spring-forward gap (02:30 does not exist in Berlin on 2026-03-29):
+    try {
+      zonedWallClockToUtc("2026-03-29T02:30:00", "Europe/Berlin");
+      expect.unreachable("gap must be rejected");
+    } catch (err) {
+      expect((err as { details?: { kind?: string } }).details?.kind).toBe("dst_gap");
+    }
+    // Fall-back overlap (02:30 occurs twice on 2026-10-25) — never silently
+    // resolved to one occurrence:
+    try {
+      zonedWallClockToUtc("2026-10-25T02:30:00", "Europe/Berlin");
+      expect.unreachable("overlap must be rejected");
+    } catch (err) {
+      expect((err as { details?: { kind?: string } }).details?.kind).toBe("dst_overlap");
+    }
+    // Unambiguous times on the same dates convert normally:
+    expect(zonedWallClockToUtc("2026-03-29T01:30:00", "Europe/Berlin").toISOString()).toBe("2026-03-29T00:30:00.000Z");
+    expect(zonedWallClockToUtc("2026-10-25T04:30:00", "Europe/Berlin").toISOString()).toBe("2026-10-25T03:30:00.000Z");
+  });
+
+  it("impossible calendar dates, times and offsets are rejected before conversion", () => {
+    for (const bad of ["2026-02-30T10:00:00", "2026-13-01T10:00:00", "2026-04-31T10:00:00"]) {
+      try {
+        zonedWallClockToUtc(bad, "Europe/Berlin");
+        expect.unreachable(`${bad} must be rejected`);
+      } catch (err) {
+        expect((err as { message?: string }).message).toContain("calendar date");
+      }
+    }
+    for (const bad of ["2026-07-01T25:00:00", "2026-07-01T10:61:00"]) {
+      expect(() => zonedWallClockToUtc(bad, "Europe/Berlin")).toThrow(/wall-clock time/);
+    }
+    // Offset-qualified with an impossible offset:
+    expect(() => zonedWallClockToUtc("2026-07-01T10:00:00+26:00", "Europe/Berlin")).toThrow(/offset/);
   });
 
   it("invalid wall-clock values fail safely", () => {
@@ -187,17 +210,19 @@ describe("customer/conversation/appointment association (hardening 5)", () => {
       duration_minutes: { state: "known", value: 30 },
       meeting_type: { state: "known", value: "in-person" },
     };
-    await booking.offer(started.id, slot);
+    const offer = await booking.offer(started.id, slot);
     const conversation = await conversations.findById(started.id);
     expect(conversation?.customerId).toBeTruthy();
     expect(customers.rows[0]?.displayName).toBe("Asha Verma");
     // The appointment record carries the same customer (after confirmation):
-    const offer = await booking.offer(started.id, slot).catch(() => null);
-    if (offer) {
-      await booking.confirm(started.id, offer.offerToken, "accept");
-    }
-    const appt = bookingState.appointments[0];
-    if (appt) expect(appt["customerId"]).toBe(conversation?.customerId);
+    await booking.confirm(started.id, offer.offerToken, "accept");
+    // UNCONDITIONAL: a real appointment row exists, carries the expected
+    // customer id, and belongs to the right conversation (final safety check 5).
+    expect(bookingState.appointments).toHaveLength(1);
+    const appt = bookingState.appointments[0] as Record<string, unknown>;
+    expect(appt["customerId"]).toBe(conversation?.customerId);
+    expect(appt["conversationId"]).toBe(started.id);
+    expect(appt["status"]).toBe("confirmed");
     // Second offer does not duplicate the customer record:
     await booking.offer(started.id, new Date(slot.getTime() + 48 * 60 * 60_000)).catch(() => undefined);
     expect(customers.rows).toHaveLength(1);

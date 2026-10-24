@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { pathToFileURL } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { loadEnv, ConfigValidationError, type Env } from "../config/env.js";
 import { createLogger, type Logger } from "../observability/logger.js";
@@ -139,7 +140,9 @@ export async function main(): Promise<void> {
   production.logger.info({ port: production.env.PORT }, "ai-receptionist backend listening (loopback only)");
 }
 
-if (process.argv[1]?.replace(/\\/g, "/").endsWith("src/server/main.ts")) {
+// Canonical ESM entry check — works for tsx (src) and the compiled dist file.
+const invokedDirectly = import.meta.url === pathToFileURL(process.argv[1] ?? "").href;
+if (invokedDirectly) {
   main().catch((err) => {
     console.error(err);
     process.exit(1);

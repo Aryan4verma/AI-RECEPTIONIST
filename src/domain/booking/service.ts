@@ -399,7 +399,9 @@ export class BookingService {
       const now = new Date();
       const appointment = await this.deps.bookingState.findAppointmentByIdempotencyKey(identity);
       if (search.status === "found") {
-        if (appointment) {
+        if (appointment && appointment.status !== "cancelled") {
+          // Race guard: a customer/admin cancellation is never silently
+          // re-confirmed by a concurrent reconciliation.
           await this.deps.bookingState.updateAppointmentOutcome(appointment.id, {
             status: "confirmed",
             googleEventId: search.eventId,
@@ -587,20 +589,49 @@ export class BookingService {
       if (state.state !== "CONFIRMED" || !state.calendarIdempotencyKey) return;
       const appointment = await this.deps.bookingState.findAppointmentByIdempotencyKey(state.calendarIdempotencyKey);
       if (appointment?.status === "cancelled") return; // idempotent
+      let calendarCancelled = false;
       try {
         const search = await this.deps.calendar.findByIdempotencyKey(state.calendarIdempotencyKey);
+        if (search.status === "inconclusive") {
+          // Uncertainty is PRESERVED: the event may exist, so the appointment
+          // is never marked cancelled on an unverified lookup.
+          await this.deps.audit?.append({
+            actorType: "system", actorId: null, action: "booking.cancel_inconclusive",
+            entityType: "appointments", entityId: appointment?.id ?? null,
+            detail: { identity: state.calendarIdempotencyKey },
+          });
+          await this.deps.escalate?.(conversationId, "cancellation blocked: event existence unverified");
+          throw new AppError("CALENDAR_UNAVAILABLE", "The event's existence could not be verified; the cancellation was not applied.", { retryable: true });
+        }
         if (search.status === "found") {
           const cancel = await this.deps.calendar.cancelEvent(search.eventId);
           if (cancel.status === "failed") {
             throw new AppError("CALENDAR_UNAVAILABLE", "The calendar could not cancel the event.", { reason: cancel.reason });
           }
+          if (cancel.status === "unresolved") {
+            // The cancel request may or may not have landed — preserve the
+            // uncertain state and escalate; never persist a definite outcome.
+            await this.deps.bookingState.updateAppointmentOutcome(appointment!.id, { status: "unresolved" });
+            await this.deps.audit?.append({
+              actorType: "system", actorId: null, action: "booking.cancel_unresolved",
+              entityType: "appointments", entityId: appointment?.id ?? null,
+              detail: { identity: state.calendarIdempotencyKey },
+            });
+            await this.deps.escalate?.(conversationId, "cancellation unresolved: provider response lost");
+            throw new AppError("CALENDAR_UNAVAILABLE", "The cancellation request is unverified; the appointment remains pending reconciliation.", { retryable: true });
+          }
+          calendarCancelled = true;
         }
+        // verified_absent: no event exists — DB-only cancellation is truthful.
       } catch (err) {
+        if (err instanceof AppError) throw err; // uncertainty/refusal surfaced as-is
         if (appointment) {
           await this.deps.bookingState.updateAppointmentOutcome(appointment.id, { status: "unresolved" }).catch(() => undefined);
         }
         throw err; // consequential cancellation failures are never silent
       }
+      // Idempotent persist: reconcile never re-confirms a cancelled
+      // appointment (race guard on the reconcile side), so cancelled sticks.
       if (appointment) {
         await this.deps.bookingState.updateAppointmentOutcome(appointment.id, { status: "cancelled" });
       }

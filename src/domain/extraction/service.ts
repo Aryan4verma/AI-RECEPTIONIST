@@ -228,18 +228,81 @@ export function zonedWallClockToUtc(wallClock: string, timezone: string): Date {
     });
   }
   const [, y, mo, d, h, mi, s, offset] = m;
-  const asUtcDigits = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s ?? "0"));
+  const year = Number(y), month = Number(mo), day = Number(d);
+  const hour = Number(h), minute = Number(mi), second = Number(s ?? "0");
+  // Strict validation (final safety check 4): reject impossible calendar
+  // dates, times and offsets BEFORE any conversion — Date.UTC would silently
+  // roll 2026-02-30 into March and 25:61 into the next day.
+  if (month < 1 || month > 12) {
+    throw new AppError("INVALID_INPUT", "The requested date is not a valid calendar date.", { field: "requested_time", month });
+  }
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day < 1 || day > daysInMonth) {
+    throw new AppError("INVALID_INPUT", "The requested date is not a valid calendar date.", { field: "requested_time", day, daysInMonth });
+  }
+  if (hour > 23 || minute > 59 || second > 59) {
+    throw new AppError("INVALID_INPUT", "The requested time is not a valid wall-clock time.", { field: "requested_time", hour, minute, second });
+  }
+  const asUtcDigits = Date.UTC(year, month - 1, day, hour, minute, second);
+  // Round-trip guard for month/day legitimacy under UTC construction:
+  const roundTrip = new Date(asUtcDigits);
+  if (roundTrip.getUTCMonth() !== month - 1 || roundTrip.getUTCDate() !== day) {
+    throw new AppError("INVALID_INPUT", "The requested date is not a valid calendar date.", { field: "requested_time" });
+  }
   if (offset) {
     if (offset === "z" || offset === "Z") return new Date(asUtcDigits);
     const sign = offset[0] === "-" ? -1 : 1;
     const oh = Number(offset.slice(1, 3));
     const om = Number(offset.slice(-2));
+    if (oh > 23 || om > 59) {
+      throw new AppError("INVALID_INPUT", "The requested time carries an invalid UTC offset.", { field: "requested_time", offset });
+    }
     return new Date(asUtcDigits - sign * (oh * 60 + om) * 60_000);
   }
+  // Naive wall-clock in the business timezone. DST handling is EXPLICIT and
+  // documented: a nonexistent local time (spring-forward gap) or an ambiguous
+  // one (fall-back overlap) is REJECTED with a clarification request — the
+  // customer's requested time is never silently shifted.
   let guess = asUtcDigits;
   for (let i = 0; i < 2; i++) {
     const offsetMinutes = tzOffsetMinutes(new Date(guess), timezone);
     guess = asUtcDigits - offsetMinutes * 60_000;
   }
-  return new Date(guess);
+  const candidate = new Date(guess);
+  // Gap detection: round-trip the candidate back to wall clock; a mismatch
+  // means the requested local time does not exist on that date.
+  const back = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone, hour12: false, year: "numeric", month: "2-digit",
+    day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(candidate);
+  const part = (t: string) => back.find((p) => p.type === t)?.value ?? "";
+  const roundTripWall = `${part("year")}-${part("month")}-${part("day")}T${part("hour") === "24" ? "00" : part("hour")}:${part("minute")}:${part("second")}`;
+  const requestedWall = `${y}-${mo}-${d}T${h}:${mi}:${s ?? "00"}`;
+  if (roundTripWall !== requestedWall) {
+    throw new AppError("INVALID_INPUT", "That local time does not exist on the requested date (daylight-saving change). Please pick a different time.", {
+      field: "requested_time", kind: "dst_gap", requestedWall, roundTripWall,
+    });
+  }
+  // Overlap detection: probe the neighboring offsets (±60 min around the
+  // candidate's offset) — if the requested wall clock also round-trips at a
+  // neighbouring offset, the local time occurs twice and is ambiguous
+  // (rejected rather than silently choosing one occurrence).
+  const offsetAtCandidate = tzOffsetMinutes(candidate, timezone);
+  const wallFormatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone, hour12: false, year: "numeric", month: "2-digit",
+    day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  for (const delta of [-60, 60]) {
+    const otherOffset = offsetAtCandidate + delta;
+    const other = new Date(asUtcDigits - otherOffset * 60_000);
+    const parts2 = wallFormatter.formatToParts(other);
+    const part2 = (t: string) => parts2.find((p) => p.type === t)?.value ?? "";
+    const roundTripWall2 = `${part2("year")}-${part2("month")}-${part2("day")}T${part2("hour") === "24" ? "00" : part2("hour")}:${part2("minute")}:${part2("second")}`;
+    if (roundTripWall2 === requestedWall) {
+      throw new AppError("INVALID_INPUT", "That local time occurs twice on the requested date (daylight-saving change). Please pick a different time.", {
+        field: "requested_time", kind: "dst_overlap", requestedWall,
+      });
+    }
+  }
+  return candidate;
 }
