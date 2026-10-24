@@ -4,7 +4,7 @@
 | --- | --- |
 | Project ID | AI-RECEPTIONIST |
 | Document ID | TESTING |
-| Version / date | v0.1 — 2026-10-23 |
+| Version / date | v0.2 — 2026-10-24 (CH-1: added TC-21…TC-31 provider-system tests; review-ready, not approved) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Acceptance and verification plan for the backend + AI phase |
 | Document lifecycle | review-ready — pending G01-REQUIREMENTS human review |
@@ -45,12 +45,23 @@ All rows are **PLANNED** — no check below has been executed. Statuses live in 
 | TC-18 | FR-5/FR-6 | Calendar outage simulation + LLM outage: defined degraded/escalation behavior, no fabricated success | IT | Fixture faults | PLANNED |
 | TC-19 | NFR (host) | Measured: cold/warm LLM latency, STT latency, E2E conversation latency, RSS with LLM and STT (staged, not concurrent) | RM + IT | Instrumented runs, results in PROGRESS §4 | PLANNED |
 | TC-20 | Migrations | Clean replay of full migration stream on empty database; constraint/policy checks | RDB | Supabase migration tooling | PLANNED — requires Q1 + write authorization |
+| TC-21 | FR-15 | Ollama unreachable → explicit provider-unavailable error state; conversation fails safe; no fabricated model list | IT | Vitest + stopped/unreachable Ollama endpoint fixture | PLANNED |
+| TC-22 | FR-15 | Ollama reachable but zero compatible installed models → explicit empty-capability state, never invented names | IT + RM | Vitest + real Ollama | PLANNED |
+| TC-23 | FR-15/FR-17 | Selected model missing at inference time (e.g., removed between selection and use) → explicit model-unavailable error; no silent switch to another model | IT + RM | Vitest + real Ollama with configured-but-absent model name | PLANNED |
+| TC-24 | FR-15/NFR (R4) | Model load exceeding available RAM → load failure reported clearly; concurrent heavy-model activation prevented by staged loading policy | IT + RM (measured) | Vitest + instrumented load on real host | PLANNED |
+| TC-25 | FR-16/SEC-14 | Invalid cloud API key → provider auth failure surfaced as safe PROVIDER_FAILURE-class error; no secret in message/logs; bounded retries only | IT | Vitest + local OpenAI-compatible fixture server (no real key) | PLANNED |
+| TC-26 | FR-16 | Provider timeout and cancellation → TIMEOUT / CANCELLED statuses; in-flight request aborted; no partial output adopted; no external effects | IT | Vitest + fixture server with induced delay/abort | PLANNED |
+| TC-27 | FR-16/SEC-8/SEC-12 | Malformed structured output from any provider (invalid JSON, extra keys, wrong types) → INVALID_OUTPUT rejection by trusted backend validation — provider-agnostic, local and cloud alike | UT + RM | Vitest schema tests + real Ollama | PLANNED |
+| TC-28 | FR-18/SEC-2/SEC-3 | Model/provider settings API: unauthenticated → 401; non-admin → 403; only authorized admin boundary mutates configuration | IT + RDB | Vitest + Supabase roles | PLANNED |
+| TC-29 | SEC-14 | Secret disclosure sweep: API keys absent from all HTTP responses (masked display), application logs, error bodies, git history; replacement/removal honored | IT + static | Vitest response assertions + repo grep/log review | PLANNED |
+| TC-30 | SEC-16 | Invalid/unsafe custom endpoint rejected at configuration boundary: internal/private addresses, localhost metadata targets, non-HTTP(S) schemes — SSRF attempts never stored or fetched | IT | Vitest endpoint-validation cases | PLANNED |
+| TC-31 | SEC-15/FR-17 | Unapproved fallback: selected local model fails with no approved cloud fallback configured → safe error, zero cloud egress, denial logged; fallback attempt without explicit approval is denied | IT | Vitest + fixture provider asserting zero outbound calls | PLANNED |
 
 Negative/failure cases are explicit above (TC-02, TC-07, TC-08, TC-10, TC-11, TC-14, TC-16, TC-17, TC-18). Real database, real-model, and real-calendar boundaries use their actual services (RDB/RM/RC) — mocks never substitute where the column names them.
 
 ## 3. [REQUIRED] Fixtures and safety
 
-- **Synthetic data:** seeded business config (fictional test business, clearly labeled), synthetic customer records, scripted audio samples (recorded by project owner or clearly synthetic tones/samples — no real customer PII in fixtures).
+- **Synthetic data:** seeded business config (fictional test business, clearly labeled), synthetic customer records, scripted audio samples (recorded by project owner or clearly synthetic tones/samples — no real customer PII in fixtures). **Cloud-provider tests use a local OpenAI-compatible fixture server with dummy keys — no real provider, no real credentials, no external calls (SEC-15).**
 - **State isolation:** tests run against local services; Supabase tests use the authorized project `ogxdszjypswutekqgorb` (empty; no destructive reset without explicit authorization); mock calendar is in-process.
 - **Destructive-command authorization:** any Supabase mutation beyond creating project-owned schema requires recorded authorization (PLAN §4); no reset of unknown/shared state; real Google writes only on the authorized test calendar after Q3.
 - **Injection corpus:** adversarial prompt fixtures kept in-repo, clearly marked as test data (never runtime instructions).
@@ -77,3 +88,5 @@ Negative/failure cases are explicit above (TC-02, TC-07, TC-08, TC-10, TC-11, TC
 | Retention policy values (Q4) | FR-9 retention ops | Owner decision; consent gating testable without it |
 | Latency/memory budgets unset (Q5) | TC-19 thresholds | G02 design decision |
 | Faster-Whisper not installed | TC-09 | Stage 6 install + fixture tests |
+| Secret-storage mechanism undecided (Q7) | TC-25/TC-29 storage branch | G02 design decision; fixture-based credential tests independent of it |
+| No real cloud provider authorized | TC-25/TC-26/TC-31 real-provider branch | Permanently fixture-based unless owner separately authorizes a provider (SEC-15) |
