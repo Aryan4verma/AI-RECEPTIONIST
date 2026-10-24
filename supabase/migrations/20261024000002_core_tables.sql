@@ -5,8 +5,10 @@ create table public.app_admins (
   display_name text not null,
   created_at timestamptz not null default now()
 );
+-- Protected from creation (security preflight): RLS on + zero grants.
 -- No RLS policies for `authenticated` on app_admins (recursion avoidance):
 -- membership is read through private.is_app_admin() only.
+alter table public.app_admins enable row level security;
 revoke all on public.app_admins from anon;
 revoke all on public.app_admins from authenticated;
 
@@ -76,6 +78,17 @@ create table public.booking_state (
   last_error text,
   updated_at timestamptz not null default now()
 );
+
+-- Immediate protection: RLS enabled at creation for every core table, before
+-- any policy exists (RLS-on + zero policies = zero rows via the Data API), and
+-- anon stripped explicitly — policies never remove grants.
+alter table public.business_config enable row level security;
+alter table public.customers enable row level security;
+alter table public.conversations enable row level security;
+alter table public.messages enable row level security;
+alter table public.booking_state enable row level security;
+revoke all on public.business_config, public.customers, public.conversations,
+  public.messages, public.booking_state from anon;
 
 -- Hardened SECURITY DEFINER helper (G02 condition E):
 -- - non-exposed `private` schema (0001)

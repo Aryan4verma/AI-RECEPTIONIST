@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 const loopbackHttpUrl = z
-  .string()
   .url()
   .refine((v) => {
     try {
@@ -16,7 +15,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().min(1024).max(65535).default(8787),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   // public class
-  SUPABASE_URL: z.string().url(),
+  SUPABASE_URL: z.url(),
   SUPABASE_PUBLISHABLE_KEY: z.string().optional(),
   OLLAMA_BASE_URL: loopbackHttpUrl.default("http://localhost:11434"),
   WHISPER_SIDECAR_PORT: z.coerce.number().int().min(1024).max(65535).default(8788),
@@ -37,6 +36,9 @@ const envSchema = z.object({
         return false;
       }
     }, "expected the session-pooler host (*.pooler.supabase.com) per the approved connection mode"),
+  // TLS verification is mandatory (fail-closed): path to the Supabase CA
+  // certificate downloaded from the dashboard by the owner. Never committed.
+  SUPABASE_DB_CA_CERT_PATH: z.string().min(1, "required — TLS verification must not be disabled"),
   TOKEN_HASH_SECRET: z.string().min(32),
   SECRET_MASTER_KEY: z.string().min(32).optional(), // inert unless a fallback store is separately approved (ADR-0002 v0.2)
   // Stage 7 only

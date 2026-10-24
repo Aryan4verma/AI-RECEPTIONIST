@@ -45,6 +45,13 @@ create table public.audit_log (
 );
 create index audit_log_entity_idx on public.audit_log (entity_type, entity_id, created_at desc);
 
+-- Protected from creation (security preflight): RLS on + anon stripped
+-- immediately for all three tables.
+alter table public.consent_decisions enable row level security;
+alter table public.recordings enable row level security;
+alter table public.audit_log enable row level security;
+revoke all on public.consent_decisions, public.recordings, public.audit_log from anon;
+
 -- Role-independent consent gate (dual-layer, condition D): the latest applicable
 -- decision governs — withdrawal/expiry/supersession always win over history.
 create or replace function private.enforce_recording_consent()

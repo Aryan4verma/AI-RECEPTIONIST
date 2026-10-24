@@ -29,3 +29,7 @@ create index appointments_open_start_idx on public.appointments (scheduled_start
 create unique index appointments_google_event_id_unique_idx
   on public.appointments (google_event_id)
   where google_event_id is not null;
+
+-- Protected from creation (security preflight).
+alter table public.appointments enable row level security;
+revoke all on public.appointments from anon;

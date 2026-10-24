@@ -15,3 +15,7 @@ create table public.model_providers (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Protected from creation (security preflight).
+alter table public.model_providers enable row level security;
+revoke all on public.model_providers from anon;

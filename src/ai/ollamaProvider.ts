@@ -69,7 +69,7 @@ export class OllamaProvider implements LLMProvider {
         stream: false,
         think: false,
         options: { num_predict: request.maxOutputTokens },
-        format: zodToJsonSchema(request.schemaName, request.schema),
+        format: jsonSchemaFor(request.schemaName, request.schema),
       };
       const res = await this.request("/api/chat", { method: "POST", body: JSON.stringify(body) }, request.timeoutMs);
       const parsed = ChatResponseShape.safeParse(res);
@@ -150,6 +150,16 @@ function toProviderError(err: unknown): AppError {
     return new AppError("PROVIDER_TIMEOUT", "Ollama request timed out.");
   }
   return new AppError("OLLAMA_UNAVAILABLE", "Ollama is unreachable.");
+}
+
+/**
+ * JSON-schema projection of a Zod schema for Ollama's `format` parameter,
+ * using zod ≥4's native converter (replaces the earlier hand-rolled `_def`
+ * walker that broke across zod majors — SEC-F6 remediation).
+ */
+function jsonSchemaFor(name: string, schema: z.ZodTypeAny): Record<string, unknown> {
+  const converted = z.toJSONSchema(schema, { io: "output", unrepresentable: "any" }) as Record<string, unknown>;
+  return { title: name, ...converted };
 }
 
 /** Minimal JSON-schema projection of a Zod object for Ollama's `format`. */

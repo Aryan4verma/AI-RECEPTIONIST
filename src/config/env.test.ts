@@ -5,6 +5,7 @@ const baseEnv = {
   SUPABASE_URL: "https://ogxdszjypswutekqgorb.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "service-key-placeholder",
   SUPABASE_DB_URL: "postgresql://postgres.proj:pw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres",
+  SUPABASE_DB_CA_CERT_PATH: "/home/owner/prod-ca-2021.crt",
   TOKEN_HASH_SECRET: "0123456789abcdef0123456789abcdef",
 };
 
@@ -18,6 +19,11 @@ describe("env validation", () => {
 
   it("fails fast on a missing secret", () => {
     const { SUPABASE_SERVICE_ROLE_KEY: _omitted, ...rest } = baseEnv;
+    expect(() => loadEnv(rest)).toThrow(ConfigValidationError);
+  });
+
+  it("refuses to start without a CA certificate path (TLS verification is mandatory)", () => {
+    const { SUPABASE_DB_CA_CERT_PATH: _omitted, ...rest } = baseEnv;
     expect(() => loadEnv(rest)).toThrow(ConfigValidationError);
   });
 

@@ -18,7 +18,7 @@ export const INTENTS = [
   "unknown",
 ] as const;
 
-export const intentSchema = z.object({
+export const intentSchema = z.strictObject({
   schema_version: z.literal(AI_SCHEMA_VERSION),
   intent: z.enum(INTENTS),
   confidence_note: z.string().max(200).optional(), // free text, never a fabricated score
@@ -29,16 +29,16 @@ export type IntentResult = z.infer<typeof intentSchema>;
 /** Field states per FR-3: missing/ambiguous are explicit, never guessed. */
 export const fieldState = <T extends z.ZodTypeAny>(value: T) =>
   z.discriminatedUnion("state", [
-    z.object({ state: z.literal("known"), value }),
-    z.object({ state: z.literal("unknown"), reason: z.string().max(200) }),
-    z.object({ state: z.literal("ambiguous"), reason: z.string().max(200), candidates: z.array(z.string().max(200)).max(5) }),
+    z.strictObject({ state: z.literal("known"), value }),
+    z.strictObject({ state: z.literal("unknown"), reason: z.string().max(200) }),
+    z.strictObject({ state: z.literal("ambiguous"), reason: z.string().max(200), candidates: z.array(z.string().max(200)).max(5) }),
   ]);
 
 export const knownDate = z
   .string()
   .refine((v) => !Number.isNaN(Date.parse(v)), "must be an RFC 3339 timestamp");
 
-export const extractionSchema = z.object({
+export const extractionSchema = z.strictObject({
   schema_version: z.literal(AI_SCHEMA_VERSION),
   customer_name: fieldState(z.string().min(1).max(200)),
   contact: fieldState(z.string().min(3).max(200)),

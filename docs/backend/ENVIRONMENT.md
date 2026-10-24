@@ -38,6 +38,7 @@ No production environment exists (Q6 unknown — never invented).
 | `SUPABASE_PUBLISHABLE_KEY` | public | no | publishable/anon API key; unused by backend this phase (no client-direct Data API calls) | `.env` |
 | `SUPABASE_SERVICE_ROLE_KEY` | **secret** (server-only) | yes | secret API key for the Data API used by supabase-js — **NOT a PostgreSQL password**; never valid as a `pg` credential | `.env`; rotate on compromise (RUNBOOK) |
 | `SUPABASE_DB_URL` | **secret** (server-only) | yes (from Stage 3) | Full PostgreSQL connection string for the shared **session pooler** (`…pooler.supabase.com:5432`, user `postgres.<project-ref>`, contains the **separate DB password**). Sourced from the Supabase dashboard Connect string; values never committed | `.env`; rotate with DB password |
+| `SUPABASE_DB_CA_CERT_PATH` | public (path only; certificate never committed) | yes | Filesystem path to the Supabase CA certificate downloaded from the dashboard (Database settings). TLS is **verify-full, fail-closed** — unreadable/missing certificate aborts startup; verification cannot be disabled | Owner downloads cert to a local path outside the repo |
 | `OLLAMA_BASE_URL` | public | no | must be loopback URL, default `http://localhost:11434` | `.env`; never admin-settable via API |
 | `WHISPER_SIDECAR_PORT` | public | no | int, default 8788; loopback only | `.env` |
 | `WHISPER_MODEL` | public | no | `tiny-int8` default; `base-int8` allowed | `.env` |
