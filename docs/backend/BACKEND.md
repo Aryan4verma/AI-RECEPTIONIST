@@ -47,7 +47,7 @@ Implements approved FR-1…FR-18 within the architecture boundaries. Domain deci
 | Model/provider settings | Admin only | Registry update; active model switch applies to **new turns**; connection test executes bounded provider call | `model_providers` rows; credentials via secrets port (never in table) | Unsafe endpoint → rejected (SEC-16, TC-30) |
 | Consent decision | Customer turn or admin | Recorded verbatim decision + scope + timestamp | `consent_decisions` + `conversations.consent_recording` | Recording stays OFF without explicit yes (FR-9) |
 
-**Intent taxonomy (v1):** `book_appointment, cancel_appointment, reschedule_appointment, ask_question, greeting, chitchat, request_human, unknown`. Booking state machine states exactly as approved in FR-5 plus terminals `CANCELLED, REJECTED, EXPIRED, FAILED`. Illegal transitions are rejected by the pure transition function (unit-tested exhaustive table).
+**Intent taxonomy (v1):** `book_appointment, cancel_appointment, reschedule_appointment, ask_question, greeting, chitchat, request_human, unknown`. Booking state machine states exactly as approved in FR-5 plus `UNRESOLVED` (calendar-create verification pending; ADR-0004 v0.2) and terminals `CANCELLED, REJECTED, EXPIRED, FAILED`. `UNRESOLVED` exits only to `CONFIRMED` (event found/adopted via search) or `FAILED` (verified `confirmed_absent`); exhausted reconciliation keeps `UNRESOLVED` + escalation. Illegal transitions are rejected by the pure transition function (unit-tested exhaustive table).
 
 ## 4. [REQUIRED] Persistence, concurrency and failure
 
