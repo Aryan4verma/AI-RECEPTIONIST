@@ -7,3 +7,4 @@ coverage/
 *.log
 sidecar/whisper/.venv/
 sidecar/whisper/__pycache__/
+supabase/.temp/
