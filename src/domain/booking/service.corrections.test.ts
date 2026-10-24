@@ -7,6 +7,7 @@ import {
   MemoryBusinessConfigRepo,
   MemoryConsentRepo,
   MemoryConversationRepo,
+  MemoryCustomerRepo,
 } from "../../db/memory/stores.js";
 import { scriptedProvider } from "../conversation/testProvider.js";
 import { BookingService } from "./service.js";
@@ -114,6 +115,49 @@ describe("TC-38: truthful appointment outcome persistence", () => {
     expect(first).toMatchObject({ bookingState: "CONFIRMED" });
     expect(replay).toMatchObject({ bookingState: "CONFIRMED", appointmentId: (first as { appointmentId: string }).appointmentId });
     expect(h.calendar["events"].size).toBe(1);
+  });
+});
+
+describe("TC-51: customer record linked from collected extraction details (FR-10)", () => {
+  it("creates a customer with the collected name/contact when an offer is extended", async () => {
+    const conversations = new MemoryConversationRepo();
+    const bookingState = new MemoryBookingStateRepo();
+    const customers = new MemoryCustomerRepo();
+    const booking = new BookingService({
+      bookingState, calendar: new MockCalendarAdapter(), tokenHashSecret: SECRET, offerTtlMinutes: 15,
+      customers,
+    });
+    const started = await conversations.create({ channel: "text", accessTokenHash: "h" });
+    const state = await bookingState.ensure(started.id);
+    state.extracted = {
+      customer_name: { state: "known", value: "Asha Verma" },
+      contact: { state: "known", value: "asha@example.com" },
+      purpose: { state: "known", value: "checkup" },
+      requested_time: { state: "known", value: slot.toISOString() },
+      duration_minutes: { state: "known", value: 30 },
+      meeting_type: { state: "known", value: "in-person" },
+    };
+    await booking.offer(started.id, slot);
+    expect(customers.rows).toHaveLength(1);
+    expect(customers.rows[0]?.displayName).toBe("Asha Verma");
+    expect(customers.rows[0]?.contactEmail).toBe("asha@example.com");
+    // Second offer must not duplicate the customer record:
+    await booking.offer(started.id, new Date(Date.now() + 48 * 60 * 60_000)).catch(() => undefined);
+    expect(customers.rows).toHaveLength(1);
+  });
+
+  it("never creates a customer record when details were not collected", async () => {
+    const conversations = new MemoryConversationRepo();
+    const bookingState = new MemoryBookingStateRepo();
+    const customers = new MemoryCustomerRepo();
+    const booking = new BookingService({
+      bookingState, calendar: new MockCalendarAdapter(), tokenHashSecret: SECRET, offerTtlMinutes: 15,
+      customers,
+    });
+    const started = await conversations.create({ channel: "text", accessTokenHash: "h" });
+    await bookingState.ensure(started.id);
+    await booking.offer(started.id, slot);
+    expect(customers.rows).toHaveLength(0);
   });
 });
 

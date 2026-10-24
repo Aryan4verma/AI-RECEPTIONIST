@@ -1,6 +1,6 @@
 import { randomUUID, createHmac } from "node:crypto";
 import { AppError } from "../../server/errors.js";
-import type { AuditRepo, BookingStateRepo } from "../../db/ports.js";
+import type { AuditRepo, BookingStateRepo, CustomerRepo } from "../../db/ports.js";
 import type { CalendarProvider } from "../../calendar/types.js";
 import { isTerminal } from "./machine.js";
 
@@ -17,6 +17,8 @@ export interface BookingServiceDeps {
    * this to the conversation escalation path so operators see it.
    */
   escalate?: (conversationId: string, reason: string) => Promise<void>;
+  /** Optional customer persistence — links collected contact details to a record (FR-10). */
+  customers?: CustomerRepo;
 }
 
 export interface OfferedSlot {
@@ -94,6 +96,30 @@ export class BookingService {
     }
     const expiresAt = new Date(Date.now() + this.deps.offerTtlMinutes * 60_000);
     const offerToken = randomUUID();
+    // FR-10: persist customer details collected during extraction (name +
+    // contact) once an offer is extended — never fabricated, only what the
+    // customer actually provided.
+    if (this.deps.customers) {
+      const name = start.extracted["customer_name"] as
+        | { state: "known"; value: string }
+        | { state: "unknown" | "ambiguous"; reason: string; candidates?: string[] }
+        | undefined;
+      const contact = start.extracted["contact"] as
+        | { state: "known"; value: string }
+        | { state: "unknown" | "ambiguous"; reason: string; candidates?: string[] }
+        | undefined;
+      if (name?.state === "known" && !name.value.startsWith("[deleted")) {
+        const contactValue = contact?.state === "known" ? contact.value : null;
+        const email = typeof contactValue === "string" && contactValue.includes("@") ? contactValue : undefined;
+        const phone = typeof contactValue === "string" && !contactValue.includes("@") ? contactValue : undefined;
+        await this.deps.customers.create({
+          displayName: name.value,
+          contactEmail: email,
+          contactPhone: phone,
+          notes: `conversation ${conversationId}`,
+        });
+      }
+    }
     await this.deps.bookingState.transition({
       conversationId,
       expectedState: "OFFER_SLOT",
