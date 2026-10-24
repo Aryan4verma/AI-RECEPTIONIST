@@ -28,12 +28,25 @@ export type CreateOutcome =
   | { status: "unresolved" } // sent-but-unverified: may exist; reconciliation required
   | { status: "failed"; reason: string }; // confirmed failure (e.g., rejected pre-send)
 
+/**
+ * Search result by durable idempotency identity. `verified_absent` means the
+ * provider lookup is authoritative for absence (in-memory exact index, or a
+ * consistency model the adapter can prove); `inconclusive` means absence
+ * could NOT be established safely (e.g., Google events.list eventual
+ * consistency) — callers must keep the booking unresolved rather than
+ * re-create (recovery addendum, condition 2).
+ */
+export type IdempotencySearch =
+  | { status: "found"; eventId: string }
+  | { status: "verified_absent" }
+  | { status: "inconclusive" };
+
 export interface CalendarProvider {
   /** Actual availability (FreeBusy equivalent). */
   checkAvailability(windowStart: string, windowEnd: string): Promise<{ busy: BusyInterval[] }>;
   createEvent(draft: CalendarEventDraft): Promise<CreateOutcome>;
   /** Search for an existing event by the durable idempotency identity. */
-  findByIdempotencyKey(idempotencyKey: string): Promise<{ found: boolean; eventId?: string }>;
+  findByIdempotencyKey(idempotencyKey: string): Promise<IdempotencySearch>;
   cancelEvent(eventId: string): Promise<{ status: "cancelled" | "unresolved" | "failed"; reason?: string }>;
   rescheduleEvent(eventId: string, newStart: string, newEnd: string): Promise<{ status: "rescheduled" | "unresolved" | "failed"; reason?: string }>;
   healthCheck(): Promise<{ ok: boolean; error?: string }>;

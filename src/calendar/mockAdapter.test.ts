@@ -29,14 +29,14 @@ describe("MockCalendarAdapter", () => {
     await expect(adapter.createEvent(draft("key-2"))).rejects.toThrow("timeout-after-send");
     // Reconciliation search by the durable identity finds nothing → confirmed absence.
     const search = await adapter.findByIdempotencyKey("key-2");
-    expect(search).toEqual({ found: false });
+    expect(search).toEqual({ status: "verified_absent" });
   });
 
   it("supports the unresolved → found path when the event did land", async () => {
     const adapter = new MockCalendarAdapter();
     await adapter.createEvent(draft("key-3"));
     const search = await adapter.findByIdempotencyKey("key-3");
-    expect(search).toEqual({ found: true, eventId: "mock-event-1" });
+    expect(search).toEqual({ status: "found", eventId: "mock-event-1" });
   });
 
   it("cancels events and excludes them from availability", async () => {

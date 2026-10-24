@@ -133,7 +133,7 @@ export class OllamaProvider implements LLMProvider {
       throw new AppError("OLLAMA_UNAVAILABLE", "Ollama is unreachable.");
     }
     if (!res.ok) {
-      throw new AppError("OLLAMA_UNAVAILABLE", `Ollama returned status ${res.status}.`);
+      throw new AppError("OLLAMA_UNAVAILABLE", "The language model service returned an error.", { status: res.status });
     }
     return res.json();
   }

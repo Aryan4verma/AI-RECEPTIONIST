@@ -3,6 +3,7 @@ import type {
   CalendarEventDraft,
   CalendarProvider,
   CreateOutcome,
+  IdempotencySearch,
 } from "./types.js";
 
 interface Faults {
@@ -67,9 +68,10 @@ export class MockCalendarAdapter implements CalendarProvider {
     return { status: "created", eventId };
   }
 
-  async findByIdempotencyKey(idempotencyKey: string): Promise<{ found: boolean; eventId?: string }> {
+  async findByIdempotencyKey(idempotencyKey: string): Promise<IdempotencySearch> {
     const hit = this.events.get(idempotencyKey);
-    return hit && !hit.cancelled ? { found: true, eventId: hit.eventId } : { found: false };
+    // The in-memory map is authoritative: not-found here IS verified absence.
+    return hit && !hit.cancelled ? { status: "found", eventId: hit.eventId } : { status: "verified_absent" };
   }
 
   async cancelEvent(eventId: string): Promise<{ status: "cancelled" | "unresolved" | "failed"; reason?: string }> {

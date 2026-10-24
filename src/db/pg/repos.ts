@@ -134,7 +134,7 @@ export class PgBookingStateRepo implements BookingStateRepo {
       }
       const result = transition(row.state, input.event);
       if (!result.ok) {
-        throw new AppError("INVALID_INPUT", `Illegal booking transition ${row.state} --${input.event}.`);
+        throw new AppError("INVALID_INPUT", "Booking transition is not allowed.", { from: row.state, event: input.event });
       }
       const sets: string[] = ["state = $2", "updated_at = now()"];
       const values: unknown[] = [input.conversationId, result.next];
@@ -218,7 +218,7 @@ export class PgBookingStateRepo implements BookingStateRepo {
         throw new AppError("SLOT_TAKEN", "Booking state changed concurrently.");
       }
       const result = transition(row.state, "RECHECK_PASSED");
-      if (!result.ok) throw new AppError("INVALID_INPUT", `Illegal booking transition ${row.state} --RECHECK_PASSED.`);
+      if (!result.ok) throw new AppError("INVALID_INPUT", "Booking transition is not allowed.", { from: row.state, event: "RECHECK_PASSED" });
       const updated = await client.query(
         `update public.booking_state set state = $2, calendar_idempotency_key = $3, updated_at = now()
          where conversation_id = $1 returning ${BOOKING_STATE_SELECT}`,
@@ -278,18 +278,32 @@ export class PgBookingStateRepo implements BookingStateRepo {
 
   async findOpenAppointmentByConversation(
     conversationId: string,
-  ): Promise<{ id: string; status: string; idempotencyKey: string } | null> {
+  ): Promise<{
+    id: string;
+    status: string;
+    idempotencyKey: string;
+    scheduledStart: Date;
+    scheduledEnd: Date;
+    durationMinutes: number;
+    timezone: string;
+  } | null> {
     const { rows } = await this.pool.query(
-      `select id, status, idempotency_key from public.appointments
+      `select id, status, idempotency_key, scheduled_start, scheduled_end, duration_minutes, timezone
+       from public.appointments
        where conversation_id = $1 and status in ('pending_confirmation', 'unresolved')
        order by created_at desc limit 1`,
       [conversationId],
     );
     if (!rows[0]) return null;
+    const r = rows[0];
     return {
-      id: rows[0].id as string,
-      status: rows[0].status as string,
-      idempotencyKey: rows[0].idempotency_key as string,
+      id: r.id as string,
+      status: r.status as string,
+      idempotencyKey: r.idempotency_key as string,
+      scheduledStart: new Date(r.scheduled_start as string),
+      scheduledEnd: new Date(r.scheduled_end as string),
+      durationMinutes: r.duration_minutes as number,
+      timezone: r.timezone as string,
     };
   }
 

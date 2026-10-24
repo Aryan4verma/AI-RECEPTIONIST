@@ -34,6 +34,20 @@ Real availability checks + event creation/cancel/reschedule on an authorized tes
 
 Reschedule = cancel-and-recreate guarded by the same key discipline; availability re-resolution required (FR-11). Race window (recheck→insert) is narrowed, not eliminated — reconciliation + search-by-identity is the compensating control.
 
+**Provider-level idempotency design (recovery safety addendum, 2026-10-24):** a
+`privateExtendedProperty` is searchable metadata, NOT a uniqueness constraint —
+Google provides no server-side create idempotency. The `CalendarProvider`
+search contract therefore distinguishes `found` / `verified_absent` /
+`inconclusive`. A create retry (same identity, never fresh) is permitted only
+on `verified_absent` plus complete authoritative appointment data (original
+start/end/duration/IANA timezone — no fallbacks). For the real Google adapter
+(Stage 7): `events.list` not-found is `inconclusive` under eventual
+consistency — the adapter must implement a stronger verification strategy
+(e.g., delayed double-probe before declaring absence) and return
+`inconclusive` otherwise; inconclusive keeps the booking UNRESOLVED with an
+audit escalation instead of re-creating. The mock adapter's in-memory index is
+authoritative and returns `verified_absent`.
+
 **Scopes (minimum necessary, finalized with Q3):** `calendar.events` (event read/write) + `calendar.readonly` (FreeBusy). Refresh token stored via SecretStore (ADR-0002); `CALENDAR_MODE=google` only after authorization.
 
 ## 4. [REQUIRED] Consequences and implementation impact

@@ -1,6 +1,6 @@
 import { randomUUID, createHmac } from "node:crypto";
 import { AppError } from "../../server/errors.js";
-import type { BookingStateRepo } from "../../db/ports.js";
+import type { AuditRepo, BookingStateRepo } from "../../db/ports.js";
 import type { CalendarProvider } from "../../calendar/types.js";
 import { isTerminal } from "./machine.js";
 
@@ -9,6 +9,8 @@ export interface BookingServiceDeps {
   calendar: CalendarProvider;
   tokenHashSecret: string;
   offerTtlMinutes: number;
+  /** Optional audit sink — required for honest recovery escalation records. */
+  audit?: AuditRepo;
 }
 
 export interface OfferedSlot {
@@ -43,7 +45,7 @@ export class BookingService {
   ): Promise<OfferedSlot> {
     const start = await this.deps.bookingState.ensure(conversationId);
     if (isTerminal(start.state) || start.state === "AWAIT_CONFIRMATION" || start.state === "UNRESOLVED") {
-      throw new AppError("INVALID_INPUT", `No booking offer possible from state ${start.state}.`);
+      throw new AppError("INVALID_INPUT", "No booking offer is possible right now.", { state: start.state });
     }
     // Walk the approved machine to the offer point: collection → validate →
     // availability → offer. Each hop is an atomic transition.
@@ -152,7 +154,7 @@ export class BookingService {
     }
 
     if (state.state !== "AWAIT_CONFIRMATION" && state.state !== "RECHECK_AVAILABILITY") {
-      throw new AppError("INVALID_INPUT", `No pending offer in state ${state.state}.`);
+      throw new AppError("INVALID_INPUT", "There is no pending offer to confirm.", { state: state.state });
     }
 
     const expired = state.offerExpiresAt !== null && state.offerExpiresAt.getTime() <= Date.now();
@@ -298,16 +300,24 @@ export class BookingService {
       conversationId, expectedState: "VERIFY_RESULT", event: "EXTERNAL_FAILURE",
       patch: { lastError: outcome.reason },
     });
-    throw new AppError("CALENDAR_UNAVAILABLE", `Calendar event creation failed: ${outcome.reason}`);
+    // Provider failure text stays server-side; the client sees a safe message.
+    throw new AppError("CALENDAR_UNAVAILABLE", "The calendar could not confirm the booking. Please try again shortly.", {
+      reason: outcome.reason,
+    });
   }
 
   /**
-   * Recovery across every persisted post-acceptance window (quality correction 2):
-   *   CREATE_EVENT   — crashed after registration, before/around the send:
-   *                    search by the SAME identity; found → adopt; verified
-   *                    absent → re-send with the SAME identity (never fresh).
-   *   VERIFY_RESULT  — crashed after send, before the outcome transition:
-   *                    found → CONFIRMED; absent → UNRESOLVED (probe later).
+   * Recovery across every persisted post-acceptance window (recovery addendum):
+   *   CREATE_EVENT   — crashed after registration, before/around the send.
+   *                    Re-send ONLY when (a) the search by the SAME identity
+   *                    returns `verified_absent` (searchable metadata alone is
+   *                    not a uniqueness constraint) and (b) the FULL original
+   *                    appointment data (start, end, duration, IANA timezone)
+   *                    is available. Missing data or inconclusive absence →
+   *                    preserve UNRESOLVED + audit escalation; never
+   *                    `new Date()`/UTC fallbacks, never a fresh identity.
+   *   VERIFY_RESULT  — sent, response lost: found → CONFIRMED; otherwise
+   *                    stays/becomes UNRESOLVED for later probing.
    *   UNRESOLVED     — standard reconciliation; exhausted attempts stay
    *                    UNRESOLVED and escalate, never auto-FAILED.
    *   CONFIRMED      — backfills a missing event-id linkage (persist failure).
@@ -330,7 +340,7 @@ export class BookingService {
       const search = await this.deps.calendar.findByIdempotencyKey(identity);
       const now = new Date();
       const appointment = await this.deps.bookingState.findAppointmentByIdempotencyKey(identity);
-      if (search.found && search.eventId) {
+      if (search.status === "found") {
         if (appointment) {
           await this.deps.bookingState.updateAppointmentOutcome(appointment.id, {
             status: "confirmed",
@@ -357,27 +367,57 @@ export class BookingService {
       }
 
       if (state.state === "CREATE_EVENT") {
-        // The send never (verifiably) happened: re-send with the SAME durable
-        // identity — a fresh identity would risk a duplicate event.
-        const appointmentRow = appointment ?? (await this.deps.bookingState.findOpenAppointmentByConversation(conversationId));
-        if (!appointmentRow) return "unresolved";
+        // The send never (verifiably) happened. A re-send requires BOTH a
+        // provider-verified absence AND complete authoritative appointment
+        // data — metadata reuse alone proves nothing and missing fields are
+        // never filled with fallbacks.
+        const open = appointment
+          ? await this.deps.bookingState.findOpenAppointmentByConversation(conversationId)
+          : null;
+        const dataComplete =
+          open &&
+          open.idempotencyKey === identity &&
+          open.scheduledStart instanceof Date &&
+          !Number.isNaN(open.scheduledStart.getTime()) &&
+          open.scheduledEnd instanceof Date &&
+          !Number.isNaN(open.scheduledEnd.getTime()) &&
+          typeof open.durationMinutes === "number" &&
+          open.durationMinutes > 0 &&
+          typeof open.timezone === "string" &&
+          // "UTC" is a valid zone that Node's IANA list does not enumerate.
+          (open.timezone === "UTC" ||
+            (Intl.supportedValuesOf("timeZone") as readonly string[]).includes(open.timezone));
+        if (search.status !== "verified_absent" || !dataComplete) {
+          await this.deps.audit?.append({
+            actorType: "system",
+            actorId: null,
+            action: "booking.recovery_blocked",
+            entityType: "booking_state",
+            entityId: conversationId,
+            detail: {
+              reason: search.status === "inconclusive" ? "absence not verifiable" : "authoritative appointment data missing",
+              identity,
+            },
+          });
+          return "unresolved"; // preserve the unresolved operation; escalated via audit
+        }
         await this.deps.bookingState.transition({
           conversationId, expectedState: "CREATE_EVENT", event: "CREATE_CONFIRMED", patch: { lastReconciledAt: now },
         });
         let outcome: Awaited<ReturnType<CalendarProvider["createEvent"]>>;
         try {
           outcome = await this.deps.calendar.createEvent({
-            idempotencyKey: identity,
-            start: (appointmentRow as unknown as { scheduledStart?: string }).scheduledStart ?? new Date().toISOString(),
-            end: (appointmentRow as unknown as { scheduledEnd?: string }).scheduledEnd ?? new Date().toISOString(),
+            idempotencyKey: identity, // SAME durable identity — never fresh
+            start: open.scheduledStart.toISOString(),
+            end: open.scheduledEnd.toISOString(),
             summary: "AI Receptionist appointment",
-            timezone: "UTC",
+            timezone: open.timezone,
           });
         } catch {
           outcome = { status: "unresolved" };
         }
         if (outcome.status === "created") {
-          await this.deps.bookingState.updateAppointmentOutcome(appointmentRow.id, {
+          await this.deps.bookingState.updateAppointmentOutcome(open.id, {
             status: "confirmed",
             googleEventId: outcome.eventId,
           });
@@ -386,7 +426,7 @@ export class BookingService {
           });
           return "confirmed";
         }
-        await this.deps.bookingState.updateAppointmentOutcome(appointmentRow.id, { status: "unresolved" });
+        await this.deps.bookingState.updateAppointmentOutcome(open.id, { status: "unresolved" });
         await this.deps.bookingState.transition({
           conversationId, expectedState: "VERIFY_RESULT", event: "CREATE_RESULT_UNKNOWN",
           patch: { unresolvedSince: new Date(), lastReconciledAt: now },

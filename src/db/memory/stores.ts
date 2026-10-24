@@ -208,14 +208,30 @@ export class MemoryBookingStateRepo implements BookingStateRepo {
 
   async findOpenAppointmentByConversation(
     conversationId: string,
-  ): Promise<{ id: string; status: string; idempotencyKey: string } | null> {
+  ): Promise<{
+    id: string;
+    status: string;
+    idempotencyKey: string;
+    scheduledStart: Date;
+    scheduledEnd: Date;
+    durationMinutes: number;
+    timezone: string;
+  } | null> {
     const appt = this.appointments.find(
       (a) =>
         a["conversationId"] === conversationId &&
         ["pending_confirmation", "unresolved"].includes(a["status"] as string),
     );
     return appt
-      ? { id: appt["id"] as string, status: appt["status"] as string, idempotencyKey: appt["idempotencyKey"] as string }
+      ? {
+          id: appt["id"] as string,
+          status: appt["status"] as string,
+          idempotencyKey: appt["idempotencyKey"] as string,
+          scheduledStart: appt["scheduledStart"] as Date,
+          scheduledEnd: appt["scheduledEnd"] as Date,
+          durationMinutes: appt["durationMinutes"] as number,
+          timezone: appt["timezone"] as string,
+        }
       : null;
   }
 

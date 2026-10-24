@@ -123,9 +123,18 @@ export interface BookingStateRepo {
   findAppointmentByIdempotencyKey(
     idempotencyKey: string,
   ): Promise<{ id: string; status: string; googleEventId: string | null } | null>;
+  /** Full authoritative appointment data — recovery re-sends require ALL of it. */
   findOpenAppointmentByConversation(
     conversationId: string,
-  ): Promise<{ id: string; status: string; idempotencyKey: string } | null>;
+  ): Promise<{
+    id: string;
+    status: string;
+    idempotencyKey: string;
+    scheduledStart: Date;
+    scheduledEnd: Date;
+    durationMinutes: number;
+    timezone: string;
+  } | null>;
   /** Recovery-path repair: adopt an identity discovered on an open appointment. */
   repairIdentity(conversationId: string, idempotencyKey: string): Promise<void>;
 }

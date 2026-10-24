@@ -194,3 +194,91 @@ function vi3spy(calendar: MockCalendarAdapter) {
   };
   return { keys };
 }
+
+describe("recovery safety addendum: blocked recovery escalates honestly", () => {
+  async function harnessWithAudit() {
+    const conversations = new MemoryConversationRepo();
+    const bookingState = new MemoryBookingStateRepo();
+    const calendar = new MockCalendarAdapter();
+    const audit = new MemoryAuditRepo();
+    const booking = new BookingService({ bookingState, calendar, tokenHashSecret: SECRET, offerTtlMinutes: 15, audit });
+    const conversation = new ConversationService({
+      conversations,
+      consent: new MemoryConsentRepo(),
+      audit,
+      config: new MemoryBusinessConfigRepo(),
+      provider: scriptedProvider([{ intent: "book_appointment" }]),
+      tokenHashSecret: SECRET,
+    });
+    const started = await conversation.start("text");
+    const offer = await booking.offer(started.conversationId, slot);
+    return { bookingState, calendar, audit, booking, conversationId: started.conversationId, offerToken: offer.offerToken };
+  }
+
+  it("missing authoritative appointment data → no send, state preserved, audit escalation", async () => {
+    const h = await harnessWithAudit();
+    const state = await h.bookingState.ensure(h.conversationId);
+    state.state = "CREATE_EVENT";
+    state.calendarIdempotencyKey = "identity-blocked-no-data";
+    const spy = vi3spy(h.calendar);
+    const outcome = await h.booking.reconcile(h.conversationId);
+    expect(outcome).toBe("unresolved");
+    expect(spy.keys).toHaveLength(0);
+    expect((await h.bookingState.get(h.conversationId))?.state).toBe("CREATE_EVENT");
+    expect(h.audit.entries.some((e) => e.action === "booking.recovery_blocked")).toBe(true);
+  });
+
+  it("non-IANA timezone in persisted data → no send, no UTC fallback", async () => {
+    const h = await harnessWithAudit();
+    const state = await h.bookingState.ensure(h.conversationId);
+    state.state = "CREATE_EVENT";
+    state.calendarIdempotencyKey = "identity-blocked-bad-tz";
+    await h.bookingState.createAppointment({
+      conversationId: h.conversationId, idempotencyKey: "identity-blocked-bad-tz", scheduledStart: slot,
+      scheduledEnd: new Date(slot.getTime() + 30 * 60_000), durationMinutes: 30, timezone: "not-a-tz",
+      status: "pending_confirmation",
+    });
+    const spy = vi3spy(h.calendar);
+    const outcome = await h.booking.reconcile(h.conversationId);
+    expect(outcome).toBe("unresolved");
+    expect(spy.keys).toHaveLength(0);
+  });
+
+  it("inconclusive provider absence → no re-create, unresolved preserved", async () => {
+    const h = await harnessWithAudit();
+    const state = await h.bookingState.ensure(h.conversationId);
+    state.state = "CREATE_EVENT";
+    state.calendarIdempotencyKey = "identity-inconclusive";
+    await h.bookingState.createAppointment({
+      conversationId: h.conversationId, idempotencyKey: "identity-inconclusive", scheduledStart: slot,
+      scheduledEnd: new Date(slot.getTime() + 30 * 60_000), durationMinutes: 30, timezone: "Europe/Berlin",
+      status: "pending_confirmation",
+    });
+    h.calendar.findByIdempotencyKey = async () => ({ status: "inconclusive" });
+    const spy = vi3spy(h.calendar);
+    const outcome = await h.booking.reconcile(h.conversationId);
+    expect(outcome).toBe("unresolved");
+    expect(spy.keys).toHaveLength(0);
+    expect((await h.bookingState.get(h.conversationId))?.state).toBe("CREATE_EVENT");
+  });
+
+  it("verified absence + complete authoritative data → re-send with the SAME identity", async () => {
+    const h = await harnessWithAudit();
+    const state = await h.bookingState.ensure(h.conversationId);
+    state.state = "CREATE_EVENT";
+    state.calendarIdempotencyKey = "identity-verified-absent";
+    await h.bookingState.createAppointment({
+      conversationId: h.conversationId, idempotencyKey: "identity-verified-absent", scheduledStart: slot,
+      scheduledEnd: new Date(slot.getTime() + 30 * 60_000), durationMinutes: 45, timezone: "Europe/Berlin",
+      status: "pending_confirmation",
+    });
+    const spy = vi3spy(h.calendar);
+    const outcome = await h.booking.reconcile(h.conversationId);
+    expect(outcome).toBe("confirmed");
+    expect(spy.keys).toEqual(["identity-verified-absent"]);
+    expect((await h.bookingState.get(h.conversationId))?.state).toBe("CONFIRMED");
+    const appt = await h.bookingState.findAppointmentByIdempotencyKey("identity-verified-absent");
+    expect(appt?.status).toBe("confirmed");
+    expect(appt?.googleEventId).toBe("mock-event-1");
+  });
+});
