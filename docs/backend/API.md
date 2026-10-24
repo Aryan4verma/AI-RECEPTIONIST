@@ -4,7 +4,7 @@
 | --- | --- |
 | Project ID | AI-RECEPTIONIST |
 | Document ID | API |
-| Version / date | v0.1 — 2026-10-24 |
+| Version / date | v0.2 — 2026-10-24 (G02 change-request revisions: CREDENTIAL_STORE_UNAVAILABLE fail-closed, BOOKING_UNRESOLVED code) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | REST operations, wire rules, error contract, limits for backend phase |
 | Document lifecycle | review-ready — pending **G02-DESIGN** |
@@ -42,8 +42,8 @@
 | `OP-12 GET /admin/appointments`, `POST /admin/appointments/{id}/cancel`, `POST …/reschedule` | FR-11/13 | admin | list (cursor pagination); reschedule `{start,end}` | 200 / 400, 401, 403, 404, 409 SLOT_TAKEN | page ≤ 50 |
 | `OP-13 GET /admin/conversations`, `GET /admin/conversations/{id}/transcript` | FR-13 | admin | list + full transcript | 200 / 401, 403, 404 | page ≤ 50 |
 | `OP-14 GET /admin/models/local` | FR-15 | admin | → `{ollama:{reachable, models:[{name,size,details}]}}` (live discovery, no hardcoding) | 200 / 503 OLLAMA_UNAVAILABLE | refresh = fresh call |
-| `OP-15 GET/POST /admin/providers`, `PATCH/DELETE /admin/providers/{id}` | FR-16/18 | admin | provider config (**`credential` write-only on POST/PATCH; responses masked**) | 200/201 / 400, 401, 403, 404, 422 UNSAFE_ENDPOINT | — |
-| `OP-16 PUT /admin/providers/{id}/credential` | FR-16/SEC-14 | admin | `{apiKey}` (write-only) → `{masked}` | 200 / 400, 401, 403 | stored via secrets port only |
+| `OP-15 GET/POST /admin/providers`, `PATCH/DELETE /admin/providers/{id}` | FR-16/18 | admin | provider config (**`credential` write-only on POST/PATCH; responses masked**) | 200/201 / 400, 401, 403, 404, 422 UNSAFE_ENDPOINT, **503 CREDENTIAL_STORE_UNAVAILABLE** (fail-closed state, ADR-0002 — credential-bearing operations rejected; metadata-only config still readable) | — |
+| `OP-16 PUT /admin/providers/{id}/credential` | FR-16/SEC-14 | admin | `{apiKey}` (write-only) → `{masked}` | 200 / 400, 401, 403, **503 CREDENTIAL_STORE_UNAVAILABLE** (secret store disabled/fail-closed — cloud credential persistence disabled, local Ollama unaffected) | stored via secrets port only; accepted **only** when the store is verified active |
 | `OP-17 POST /admin/providers/{id}/test` | FR-18 | admin | → `{status, latencyMs, error?}` (bounded live call) | 200 (with status field) / 504 PROVIDER_TIMEOUT | ≤ 10 s |
 | `OP-18 PUT /admin/settings/active-model` | FR-17 | admin | `{providerId, modelId}` → `{active:{providerId,modelId,appliesFrom:'next_turn'}}` | 200 / 400 UNKNOWN_MODEL, 401, 403 | validates model exists/reachable for local |
 | `OP-19 GET /admin/consent`, `GET/DELETE /admin/recordings[/{id}]` | FR-9 | admin | consent ledger; recording list/delete (post-Q4 activation) | 200 / 401, 403, 404 | DELETE honored immediately |
@@ -53,7 +53,7 @@
 
 ## 3. [REQUIRED] Shared conventions
 
-- **Error envelope (single owner):** `{ "error": { "code": string, "message": string, "details"?: unknown, "requestId": string } }`. Codes: `INVALID_INPUT, UNSUPPORTED_MEDIA_TYPE, AUDIO_TOO_LARGE, STT_FAILED, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, RATE_LIMITED, RESOURCE_LIMIT, PROVIDER_FAILURE, PROVIDER_TIMEOUT, INVALID_OUTPUT, OLLAMA_UNAVAILABLE, MODEL_UNAVAILABLE, CALENDAR_UNAVAILABLE, SLOT_TAKEN, OFFER_EXPIRED, UNSAFE_ENDPOINT, INTERNAL`. HTTP status mapping documented in code; `INTERNAL` never leaks stack/SQL.
+- **Error envelope (single owner):** `{ "error": { "code": string, "message": string, "details"?: unknown, "requestId": string } }`. Codes: `INVALID_INPUT, UNSUPPORTED_MEDIA_TYPE, AUDIO_TOO_LARGE, STT_FAILED, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, RATE_LIMITED, RESOURCE_LIMIT, PROVIDER_FAILURE, PROVIDER_TIMEOUT, INVALID_OUTPUT, OLLAMA_UNAVAILABLE, MODEL_UNAVAILABLE, CALENDAR_UNAVAILABLE, SLOT_TAKEN, OFFER_EXPIRED, UNSAFE_ENDPOINT, CREDENTIAL_STORE_UNAVAILABLE, BOOKING_UNRESOLVED, INTERNAL`. HTTP status mapping documented in code; `INTERNAL` never leaks stack/SQL. `BOOKING_UNRESOLVED` reports the explicitly-unresolved calendar outcome (ADR-0004 v0.2) — never a false success or false failure.
 - **Timestamps:** RFC 3339 UTC. IDs: UUID v4. Nulls explicit. Existence hiding: customer-scoped 404 on token mismatch.
 - **Validation:** all inputs Zod-parsed at boundary; parsed values only thereafter (SEC-1).
 - **Correlation:** `X-Request-Id` accepted or generated; echoed in error envelope + logs.

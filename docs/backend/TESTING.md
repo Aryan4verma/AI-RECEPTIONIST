@@ -4,7 +4,7 @@
 | --- | --- |
 | Project ID | AI-RECEPTIONIST |
 | Document ID | TESTING |
-| Version / date | v0.3 — 2026-10-24 (v0.2 scope APPROVED at G01 2026-10-24; TC-32 added as design-stage addition, pending G02) |
+| Version / date | v0.4 — 2026-10-24 (v0.2 scope APPROVED at G01; TC-32…TC-37 added as G02 change-request design-stage additions, pending G02) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Acceptance and verification plan for the backend + AI phase |
 | Document lifecycle | approved (v0.2 scope, G01 2026-10-24) + v0.3 design-stage addition pending G02 |
@@ -56,7 +56,12 @@ All rows are **PLANNED** — no check below has been executed. Statuses live in 
 | TC-29 | SEC-14 | Secret disclosure sweep: API keys absent from all HTTP responses (masked display), application logs, error bodies, git history; replacement/removal honored | IT + static | Vitest response assertions + repo grep/log review | PLANNED |
 | TC-30 | SEC-16 | Invalid/unsafe custom endpoint rejected at configuration boundary: internal/private addresses, localhost metadata targets, non-HTTP(S) schemes — SSRF attempts never stored or fetched | IT | Vitest endpoint-validation cases | PLANNED |
 | TC-31 | SEC-15/FR-17 | Unapproved fallback: selected local model fails with no approved cloud fallback configured → safe error, zero cloud egress, denial logged; fallback attempt without explicit approval is denied | IT | Vitest + fixture provider asserting zero outbound calls | PLANNED |
-| TC-32 | SEC-14/FR-16 | Secret-storage mechanism operational (design ADR-0002): credential round-trip via chosen mechanism (Supabase Vault or env-key AES-GCM fallback), key never stored plaintext, masked readback, replace/remove honored | IT | Vitest + mechanism integration check | PLANNED — added at design, pending G02 |
+| TC-32 | SEC-14/FR-16 (ADR-0002 v0.2) | **Fail-closed secret storage:** when Vault is verified available+secure → credential round-trip, no plaintext at rest, masked readback, replace/remove honored; when Vault is unavailable or privilege-insecure → OP-16 returns `CREDENTIAL_STORE_UNAVAILABLE`, **no fallback silently activates**, cloud credential persistence disabled, local Ollama path fully operational | IT | Vitest + Vault verification checks + disabled-state behavior tests | PLANNED — added at design, pending G02 |
+| TC-33 | FR-9 (dual-layer consent) | `enforce_recording_consent()` trigger rejects a `recordings` insert **via service_role** (RLS-bypassing principal) when no affirmative consent row exists; insert succeeds only with consent; backend boundary refuses independently first | RDB | Vitest + real DB role tests | PLANNED — added at design, pending G02 |
+| TC-34 | G07 migration integrity | Remote `supabase_migrations.schema_migrations` history matches committed migration files (name+hash); clean replay on empty DB; intended-vs-catalog drift zero after each migration; any out-of-stream schema change is flagged as drift, never adopted | RDB | CLI history query + replay + catalog comparison | PLANNED — added at design, pending G02 |
+| TC-35 | SEC-3 RLS correctness (recursion-free) | `is_app_admin()` SECURITY DEFINER policy path evaluates without recursive-policy errors; admin allow-cases pass; `anon` zero rows/grants on all tables incl. `app_admins`; membership removal revokes within freshness bound | RDB | Vitest + real-role tests + policy EXPLAIN | PLANNED — added at design, pending G02 |
+| TC-36 | FR-6/SEC-9/SEC-13 (uncertain outcomes) | Timeout-after-send on create → state `unresolved` persisted with original idempotency identity; search-by-`privateExtendedProperty` finds the event → adopted, no second create; confirmed absent → explicit `confirmed_absent`; **exhausted reconciliation leaves `unresolved` + escalation, never auto-FAILED**; restart sweep resumes recovery; customer never told success/failure while unresolved | IT (+RC real branch) | Vitest + mock adapter fault injection + restart-cycle test | PLANNED — added at design, pending G02 |
+| TC-37 | NFR/Q5 (evidence-driven budgets) | Memory-admission check refuses model load under low free RAM with `RESOURCE_LIMIT` (no thrash); STT and LLM strictly sequential per turn; cold vs warm model latency and RSS measured and reported separately; sidecar reload-on-demand works; readiness does not require model residency | IT + RM (measured on real host) | Instrumented Vitest runs + measured evidence in PROGRESS §4 | PLANNED — added at design, pending G02 |
 
 Negative/failure cases are explicit above (TC-02, TC-07, TC-08, TC-10, TC-11, TC-14, TC-16, TC-17, TC-18). Real database, real-model, and real-calendar boundaries use their actual services (RDB/RM/RC) — mocks never substitute where the column names them.
 
@@ -89,5 +94,8 @@ Negative/failure cases are explicit above (TC-02, TC-07, TC-08, TC-10, TC-11, TC
 | Retention policy values (Q4) | FR-9 retention ops | Owner decision; consent gating testable without it |
 | Latency/memory budgets unset (Q5) | TC-19 thresholds | G02 design decision |
 | Faster-Whisper not installed | TC-09 | Stage 6 install + fixture tests |
-| Secret-storage mechanism undecided (Q7) | TC-25/TC-29 storage branch | G02 design decision; fixture-based credential tests independent of it |
+| Secret-storage mechanism undecided (Q7 — fail-closed proposal in ADR-0002 v0.2) | TC-32 | G02 decision; Vault availability + privilege verification at implementation before any adoption |
+| Supabase Vault privilege posture unverified | TC-32/SEC-F4 | Read-only verification at Stage 3 |
+| Network IPv6 availability unknown (direct vs session-pooler) | G03 connectivity check | Stage 3 verification records the chosen path |
+| Provisional budgets unmeasured (Q5) | TC-19/TC-37 | Honest cold/warm measurement at implementation; no performance PASS claims before evidence |
 | No real cloud provider authorized | TC-25/TC-26/TC-31 real-provider branch | Permanently fixture-based unless owner separately authorizes a provider (SEC-15) |

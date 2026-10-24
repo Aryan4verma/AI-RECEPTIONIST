@@ -4,7 +4,7 @@
 | --- | --- |
 | Project ID | AI-RECEPTIONIST |
 | Document ID | ARCHITECTURE |
-| Version / date | v0.1 — 2026-10-24 |
+| Version / date | v0.2 — 2026-10-24 (G02 change-request revisions: AD-7 fail-closed, AD-9 connection mode, resource-pressure honesty) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | System topology, trust boundaries, technology and module decisions for the backend + AI phase |
 | Document lifecycle | review-ready — pending **G02-DESIGN** |
@@ -45,9 +45,9 @@ Single Node.js application process; all privileged actions execute here.
 | AD-4 | Unified `LLMProvider` port: `OllamaProvider` + `OpenAICompatibleProvider`; `ModelRegistry` for discovery/config | Domain logic provider-agnostic; adapters added without domain change (ai-capabilities guidance) | FR-15/16/17, SEC-14/15/16 | ADR-0003 |
 | AD-5 | `CalendarProvider` port: `MockCalendarAdapter` (deterministic) + `GoogleCalendarAdapter` (googleapis, OAuth code flow) | Mock fully verified before real writes (prompt §5.D) | FR-6/7/11, SEC-7/9 | ADR-0004 |
 | AD-6 | Python faster-whisper sidecar process, on-demand load/unload, localhost HTTP | In-process WASM/native Node STT rejected: immature + heavy; TTS server rejected (A1) | FR-8, R4 | ADR-0005 |
-| AD-7 | Secrets: Supabase Vault primary; env-keyed AES-256-GCM store as fallback (Node `crypto`, standard primitive) | Plaintext DB columns, custom crypto rejected (SEC-14) | SEC-14, FR-16 | ADR-0002 (Q7 → G02) |
+| AD-7 | Secrets: **fail-closed** — Supabase Vault primary *only when verified available and secure*; otherwise cloud-provider credential persistence stays **disabled** (AES-256-GCM fallback only via separate explicit approval) | Plaintext DB columns, custom crypto, silent fallback all rejected (SEC-14; G02 change request) | SEC-14, FR-16 | ADR-0002 v0.2 (Q7 → G02) |
 | AD-8 | Conversation-token authentication for unauthenticated customers (random secret issued at session creation, stored hashed) | Raw conversation-ID access is enumerable; cookie/JWT overkill for v1 | FR-1, SEC-2/3 | AUTH.md §3 |
-| AD-9 | Atomic booking transitions via `pg` transaction + `SELECT … FOR UPDATE` on `booking_state`; supabase-js for simple CRUD | Supabase-js cannot run multi-statement transactions; RPC move of domain logic rejected (keeps decisions in domain code) | FR-5, SEC-9 | BACKEND.md §4, DATABASE.md §3 |
+| AD-9 | Atomic booking transitions via `pg` transaction + `SELECT … FOR UPDATE` on `booking_state`; supabase-js (Data API) for simple CRUD; `pg` connects via the **shared session pooler** (IPv4-compatible, prepared statements OK) — distinct credential class from the Data API service key (service-role key is never a Postgres password) | Supabase-js cannot run multi-statement transactions; RPC move of domain logic rejected (keeps decisions in domain code); connection mode per current Supabase docs (G02 correction) | FR-5, SEC-9 | BACKEND.md §4, DATABASE.md §3, ENVIRONMENT.md §4, SUPABASE.md §5 |
 
 ## 4. [REQUIRED] Module and data boundaries
 
@@ -81,7 +81,7 @@ Dependency direction: `http/routes → domain services → (repositories, ai por
 
 - **Provider failure:** LLM/STT/calendar outages → typed safe errors (`PROVIDER_FAILURE`, `TIMEOUT`, `CANCELLED`); conversation continues or escalates (FR-12); no fabricated success (SEC-13). Uncertain calendar create result → persisted unknown state + bounded reconciliation (ADR-0004).
 - **Model failure:** selected model missing/overloaded → explicit error, no silent switch (FR-17, TC-23); fallback only when explicitly configured and approved.
-- **Resource pressure:** single-inference semaphore; STT and LLM never loaded/concurrent beyond budget; sidecar unloads on idle; 503 `RESOURCE_LIMIT` beyond one active conversation.
+- **Resource pressure:** single-inference semaphore spanning STT and LLM (strictly sequential per turn); **memory-admission checks refuse model loads under low free RAM** (`RESOURCE_LIMIT`, never thrash); sidecar unloads on idle and reloads on demand; 503 beyond one active conversation. Budgets are **provisional measurement targets** — cold/warm latency and RSS are measured at implementation; no performance gate is declared PASS without honest measurement (G02 correction).
 - **Graceful shutdown:** SIGTERM → stop accepting, finish in-flight turn or abort safely (no partial external effects), close DB clients, stop sidecar.
 - **Evolution:** provider adapters and capability guides added without domain change (ai-handoff compatibility rules); migrations forward-only single stream.
 - **Unknowns:** Q3 (Google credentials — BLOCKED for real adapter work only), Q4 retention policy (G02), cloud provider choice (none authorized — fixture-only until 05 authorization). Review dependency: **G02-DESIGN covers this document with all linked design docs.**

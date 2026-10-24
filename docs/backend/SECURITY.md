@@ -4,7 +4,7 @@
 | --- | --- |
 | Project ID | AI-RECEPTIONIST |
 | Document ID | SECURITY |
-| Version / date | v0.1 — 2026-10-24 |
+| Version / date | v0.2 — 2026-10-24 (G02 change-request revisions: dual-layer consent, fail-closed store, migration integrity, SEC-F4/F5) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Threat model, control mapping for SEC-1…SEC-16, specialized surfaces, findings policy |
 | Document lifecycle | review-ready — pending **G02-DESIGN** |
@@ -32,7 +32,10 @@
 | SSRF via configurable provider endpoints (SEC-16) | OP-15/16 config; adapter egress | Scheme must be https (cloud); DNS-resolve + block private/loopback/link-local/metadata (169.254.169.254) ranges; no redirects to private; fixed `OLLAMA_BASE_URL` from server env (not admin-settable) | TC-30 | backend |
 | Unapproved cloud egress / paid fallback (SEC-15) | ai adapter selection | Default = local provider; cloud provider used only if admin configured AND active; fallback to cloud requires explicit approved fallback config; denial logged | TC-31 | backend |
 | Resource abuse / cost (SEC-10, R5) | all endpoints, inference | Rate limits (per-IP/per-conversation), audio caps, token caps, inference semaphore, price-aware admission for cloud (per-call cost estimate refused above configured envelope — enforced before call) | TC-17, TC-19 | backend |
-| Double-booking race (SEC-9) | calendar create | Recheck-before-create + idempotency key + unique event id + reconciliation | TC-06/TC-16 | backend |
+| Double-booking race (SEC-9) | calendar create | Recheck-before-create + idempotency key + unique event id + reconciliation; unresolved outcomes stay explicitly unresolved (never false success/failure, never blind re-create) | TC-06/TC-16/TC-36 | backend |
+| Recording without consent (FR-9) — **dual-layer** | recording persistence | Trusted backend check **and** role-independent DB trigger `enforce_recording_consent()` (service_role bypasses RLS, so RLS alone cannot be the gate) | TC-10 + TC-33 | backend + data |
+| Fail-closed credential storage (SEC-14 / ADR-0002 v0.2) | secrets store | Vault adopted only after availability **and privilege** verification; otherwise credential persistence disabled (`CREDENTIAL_STORE_UNAVAILABLE`) — no silent fallback; local Ollama unaffected | TC-32 | backend |
+| Migration-history integrity (G07) | schema evolution | CLI-only application path; remote history ↔ committed files ↔ catalog drift verification; `execute_sql` success never treated as history proof | TC-34 | data |
 | SQL injection (SEC-1) | DB layer | Parameterized queries only (supabase-js/pg parameterized); no dynamic SQL string building | code review + TC-05 | backend |
 | PII in logs/telemetry (SEC-11) | logging | Redaction path list (authorization headers, tokens, message content logged as length+hash only by default); PII never in error responses | log inspection tests | backend |
 | Malformed/oversized input (SEC-1/10) | all endpoints | Zod + Fastify body limits (1 MB JSON) + audio caps | TC-17 | backend |
@@ -54,6 +57,8 @@
 | SEC-F1 | Data API `public` schema exposure is provider-default; controls rely on zero grants/policies — must be verified at implementation, not assumed | Medium (if misconfigured) | Verify exposed-schema settings + real anon-role test at Stage 3 (TC-11) | Open — implementation evidence required |
 | SEC-F2 | Localhost-only binding is an operational setting, not a code guarantee | Low this phase | Bind config validated at startup (G03); revisit at deployment | Open |
 | SEC-F3 | Cloud provider egress transmits conversation content off-device by design when opted in | Medium (privacy) | Explicit opt-in flag + per-provider data-region recording + owner authorization before activation (SEC-15/PLAN §4) | Accepted-by-design pending owner authorization |
+| SEC-F4 | Supabase Vault privilege posture on this project unverified — decrypted-secret reads could be over-granted | Medium (secret exposure) | Fail-closed per ADR-0002 v0.2: verify `vault.decrypted_secrets` grants/Data-API exposure before adoption; otherwise credential persistence disabled | Open — implementation verification (TC-32) |
+| SEC-F5 | Proposed performance/resource budgets are unverified on this host (~0.77 GB free at discovery) | Low (operational honesty) | Treat as provisional measurement targets; admission checks + honest cold/warm measurement at implementation (TC-37/TC-19); no false performance-gate claims | Open — measurement required |
 | — | No fabricated clean scans: dependency/static audits are executed at release stage, not claimed now | — | — | — |
 
 ## 5. [REQUIRED] Change and incident boundaries

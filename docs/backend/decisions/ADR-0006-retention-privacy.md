@@ -4,7 +4,7 @@
 | --- | --- |
 | Project ID | AI-RECEPTIONIST |
 | Document ID | ADR-0006 |
-| Version / date | v0.1 — 2026-10-24 |
+| Version / date | v0.2 — 2026-10-24 (G02 change-request revision: consent-evidence consistency, deletion mechanics) |
 | Decision status | **PROPOSED** — requires G02-DESIGN human approval (Q4 deferred here by owner at G01) |
 | Scope | Recording consent, retention durations, deletion rules for transcripts/recordings/customer data |
 
@@ -27,7 +27,14 @@ FR-9 (consent-gated recording, disabled by default), FR-10 (protected records), 
 | Audit log | Append-only, retained **1 year** | Longer if owner prefers |
 | Consent decisions | Retained **3 years** (evidence of consent must outlive the recording) | Legal-hold instinct; owner may shorten |
 
-**Deletion mechanics:** retention sweep (manual/ops-triggered v1) deletes expired recordings (DB + storage object); transcript expiry anonymizes content (`content = '[expired]'` flag preserved); all deletions audit-logged. Deletion is irreversible by design.
+**Consistency rules (v0.2, resolving the G02 change request):**
+- **Consent evidence outlives conversations:** `consent_decisions` no longer cascade-deletes with the conversation (`ON DELETE SET NULL` + plain `conversation_ref` column preserves provenance). The proposed 3-year consent lifetime is enforceable independently of conversation deletion. (Durations remain proposals until the owner decides.)
+- **Dual-layer consent enforcement:** because the backend's service-role writes **bypass RLS**, the recording gate is enforced twice: (1) a role-independent `enforce_recording_consent()` BEFORE INSERT **trigger** on `recordings` rejects any insert without a matching affirmative consent row (works even for service_role); (2) the trusted backend boundary independently checks consent before ever invoking recording persistence (DATABASE §3, TC-33).
+- **Storage objects, not just rows:** recording deletion = Supabase Storage object deletion **and** DB row deletion, with the storage delete attempted first; a partial failure leaves the row marked `deletion_pending` and retried (bounded, with failure audit + escalation) — never a dangling object that outlives its record silently.
+- **Deletion failures and retries:** sweeps (transcript expiry, recording retention, audit purge) run as bounded maintenance operations with per-item retry (≤ 3), explicit failure states, audit entries, and escalation to the owner on exhausted retries; a failed deletion never silently "succeeds".
+- **Customer deletion/anonymization:** admin delete → `display_name` → `'[deleted customer]'`, contact fields nulled, notes cleared, row retained with FK set-nulls (scoped history retention per the owner's decision below); consent evidence and audit rows unaffected.
+- **Transcript/summary expiry:** `messages.expires_at` + `conversations.summary` expiry set at write time from the approved policy; the expiry sweep replaces content with a tombstone marker (`'[expired per retention policy]'`), preserving message counts/structure without customer content.
+- **Audit log vs append-only:** the 1-year audit purge is a **privileged maintenance path** (service-role, recorded in the privileged-path ledger, owner-authorized); append-only applies to all application/admin roles — no UPDATE ever, DELETE only by the authorized purge path.
 
 ## 4. [REQUIRED] Consequences and implementation impact
 

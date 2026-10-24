@@ -4,7 +4,7 @@
 | --- | --- |
 | Project ID | AI-RECEPTIONIST |
 | Document ID | AUTH |
-| Version / date | v0.1 — 2026-10-24 |
+| Version / date | v0.2 — 2026-10-24 (G02 change-request revisions: recursion-free RLS, token hardening, independent backend enforcement) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Identity, session lifecycle, access matrix, privileged boundaries |
 | Document lifecycle | review-ready — pending **G02-DESIGN** |
@@ -28,8 +28,9 @@
 | Admin sign-in | Supabase Auth password grant (frontend later) → access JWT + refresh token; backend **API does not handle passwords** — it only verifies JWTs |
 | Admin request verification | Verify JWT signature + `iss`/`aud`/`exp` via project JWKS/secret (`getClaims()`-equivalent local verification), then per-request membership check against `app_admins` (60s in-process cache — freshness policy; revocation effective ≤ 60s for membership, immediate for token expiry) |
 | Admin refresh/logout/recovery | Supabase Auth standard flows, owned by future frontend + Supabase; backend exposes no session endpoints. Logout → token expiry ends access; membership row removal ends access within cache TTL |
-| Customer session creation | `POST /conversations` → server generates token, returns it once, stores hash. Token loss = inaccessible session (by design; no recovery in v1 — documented) |
-| Customer request auth | `conversation_id` + `X-Conversation-Token`; constant-time hash comparison; failure = 404 (existence hiding, no 403 enumeration signal) |
+| Customer session creation | `POST /conversations` → server generates a **32-byte CSPRNG token** (`crypto.randomBytes`), returns it once, stores **HMAC-SHA-256(token, `TOKEN_HASH_SECRET`)** (keyed hash — a DB leak alone cannot verify stolen tokens). Token loss = inaccessible session (by design; no recovery in v1 — documented) |
+| Customer request auth | `conversation_id` + `X-Conversation-Token`; keyed-hash + **constant-time** comparison; failure = 404 (existence hiding, no 403 enumeration signal) |
+| Token scope/revocation | Token grants access to exactly one conversation (hash stored on that row); every query scoped `WHERE id = ? AND access_token_hash = ?` — other conversations unreachable by construction; revocation = conversation `status` → `ended` (all customer access fails immediately; hash never reused) |
 | Callback/redirect allowlists | NOT_APPLICABLE this phase (no browser flows in backend phase); Google OAuth callback (Stage 7) uses server-side redirect to `GOOGLE_OAUTH_REDIRECT_URI` (exact URI in env allowlist of one) |
 | Transport | Backend phase: localhost HTTP. Production TLS deferred to deployment stage (no production target, Q6). Bearer/JWT + header token; no cookies v1 (no CSRF surface; revisit with frontend phase if cookie sessions adopted) |
 | Credential isolation | `service_role` key and conversation tokens never logged, never sent to clients beyond the one-time issue, never in model prompts (SEC-4/8/14) |
@@ -49,10 +50,12 @@ No caller-editable privilege authority: `app_admins` changes are migration/manua
 
 ## 4. [REQUIRED] Database and privileged boundaries
 
-- Roles/grants/RLS: `DATABASE.md` §3 — RLS on all tables; policies keyed to `app_admins` membership for `authenticated`; `service_role` bypasses RLS by design and is confined to the server process.
-- SQL claim context: policies use `auth.uid()` (Supabase managed); backend `pg` transactions run as service role — they are the trusted path, and their callers are already guard-checked at HTTP.
-- Privileged-path ledger (complete): (1) booking transitions (pg transaction), (2) calendar create/cancel/reschedule (adapter), (3) credential write/read (secrets store), (4) customer PII read (admin APIs + RLS), (5) migration application (owner-authorized). No other privileged paths exist; new ones require 21/05.
-- Revocation behavior: membership removal → admin access ends ≤ 60s (cache); token expiry → immediate; conversation token invalidation = session end (status `ended`) → all customer access fails.
+- **RLS recursion avoidance (G02 correction):** a policy on a table that queries `app_admins`, combined with any policy on `app_admins` itself readable by `authenticated`, can recurse. Design: all admin-membership checks in policies go through one **`SECURITY DEFINER` function `public.is_app_admin()`** (owner: migration stream; `STABLE`; hardened `search_path`; grants EXECUTE to `authenticated` only). Policies on business tables call `is_app_admin()`; **`app_admins` itself has no policies for `authenticated`** (grants: SELECT/INSERT/DELETE to `service_role` only; membership changes are owner-authorized operations, never API-writable). The function's definer rights avoid recursive policy evaluation and keep membership authoritative.
+- **Independent backend enforcement (G02 correction):** service_role bypasses RLS by design, so **RLS is never the enforcement layer for backend operations**. Every service-role write is reached only through HTTP guards (admin JWT + membership, or customer token) **and** domain ownership checks in trusted code (e.g., booking transitions verify conversation state and token lineage; consent is enforced by both backend check and DB trigger). The DB is the second layer, never the only one.
+- Roles/grants/RLS: `DATABASE.md` §3 — RLS on all tables; policies via `is_app_admin()` for `authenticated`; `anon` zero.
+- SQL claim context: policies use `auth.uid()` (Supabase managed); backend `pg` transactions run as service role — the trusted path, callers guard-checked at HTTP.
+- Privileged-path ledger (complete): (1) booking transitions (pg transaction), (2) calendar create/cancel/reschedule (adapter), (3) credential write/read (secrets store — **fail-closed**, ADR-0002), (4) customer PII read (admin APIs + RLS), (5) migration application (owner-authorized, CLI-only per SUPABASE §5), (6) retention/audit purge sweeps (owner-authorized maintenance, ADR-0006). No other privileged paths exist; new ones require 21/05.
+- Revocation behavior: membership removal → admin access ends ≤ 60 s (cache) — and immediately at the DB layer (function reads `app_admins` live); token expiry → immediate; conversation token revocation = session end (status `ended`) → all customer access fails.
 - Service-key use: single `service_role` client per process; never per-request user impersonation (no user-scoped privileged clients v1).
 
 ## 5. [OPTIONAL] Additional assurance

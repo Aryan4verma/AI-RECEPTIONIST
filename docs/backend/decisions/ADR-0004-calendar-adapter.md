@@ -4,7 +4,7 @@
 | --- | --- |
 | Project ID | AI-RECEPTIONIST |
 | Document ID | ADR-0004 |
-| Version / date | v0.1 — 2026-10-24 |
+| Version / date | v0.2 — 2026-10-24 (G02 change-request revision: explicit unresolved-outcome semantics) |
 | Decision status | **PROPOSED** — requires G02-DESIGN human approval |
 | Scope | FR-6/FR-7/FR-11 calendar design (mock-first, OAuth, concurrency, idempotency) |
 
@@ -24,7 +24,15 @@ Real availability checks + event creation/cancel/reschedule on an authorized tes
 | B. Direct googleapis calls from domain services | Faster to write, scattered security/idempotency logic | Declined (no single trust boundary) |
 | C. CalDAV/other abstraction library | Extra dependency; Google-specific features (FreeBusy) anyway | Declined |
 
-**Idempotency design:** server-generated `idempotency_key` (uuid) created at confirmation; sent as Google extended private property; partial unique index on `google_event_id`; recheck via FreeBusy immediately pre-insert; uncertain outcome (timeout after send) → persisted `unknown` → bounded reconciliation (`getEvent` by idempotency-key query ≤ 3 attempts) → resolved or FAILED + audit + escalation. Reschedule = cancel-and-recreate guarded by the same keys; availability re-resolution required (FR-11).
+**Idempotency and uncertain-outcome design (v0.2):** server-generated `idempotency_key` (uuid) created at confirmation; sent as a Google extended **private** property on every event; partial unique index on `google_event_id`; FreeBusy recheck immediately pre-insert. Every create resolves to exactly one of three terminal observability states — **`created`** (event id persisted), **`confirmed_absent`** (verified the event does not exist), or **`unresolved`** (creation may or may not have happened; see below). Nothing else may be reported (SEC-13).
+
+**Uncertain-outcome handling (`unresolved`):**
+1. A timeout/unknown error **after the request was sent** persists `state = 'unresolved'` in `booking_state` **with the original `idempotency_key` and appointment row retained** — it is **never** converted to `FAILED` merely because reconciliation attempts were exhausted, and the system **never issues a second create with a fresh identity** (duplicate-event risk).
+2. Reconciliation uses supported Google APIs to **search for the existing event**: `events.list` filtered by `privateExtendedProperty=bookingIdempotencyKey:<key>` on the configured calendar (plus `getEvent` when an id is suspected). Bounded attempts (≤ 3, exponential backoff) within the request; if still unresolved, the state remains `unresolved` and the case is **escalated for safe human review** (conversation escalated per FR-12; audit entry).
+3. **Restart-safe recovery:** `unresolved` state and the idempotency key live in the database, so recovery is not tied to the original HTTP request. Reconciliation resumes on (a) application startup sweep of `unresolved` booking rows, and (b) any subsequent access to the conversation. A human can also trigger reconciliation via admin API.
+4. Resolution outcomes: event found → adopt its `eventId`, mark `created`, persist id, confirm to customer; verified absent (search exhausted with API confirmation) → `confirmed_absent` → offer retry as a NEW confirmation flow (new key, explicit customer re-confirmation); still ambiguous → remains `unresolved`, escalated, customer told honestly that the booking state is being verified — never told it failed or succeeded (SEC-13).
+
+Reschedule = cancel-and-recreate guarded by the same key discipline; availability re-resolution required (FR-11). Race window (recheck→insert) is narrowed, not eliminated — reconciliation + search-by-identity is the compensating control.
 
 **Scopes (minimum necessary, finalized with Q3):** `calendar.events` (event read/write) + `calendar.readonly` (FreeBusy). Refresh token stored via SecretStore (ADR-0002); `CALENDAR_MODE=google` only after authorization.
 

@@ -4,7 +4,7 @@
 | --- | --- |
 | Project ID | AI-RECEPTIONIST |
 | Document ID | SUPABASE |
-| Version / date | v0.1 — 2026-10-24 |
+| Version / date | v0.2 — 2026-10-24 (G02 change-request revisions: connection mode, credential classes, CLI-only migration path, Vault verification) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Supabase provider topology, credential classes, connection mode, capabilities for project `ogxdszjypswutekqgorb` |
 | Document lifecycle | review-ready — pending **G02-DESIGN** |
@@ -49,14 +49,21 @@ There is **one** Supabase environment. It is treated as non-disposable (RULES: n
 
 ## 5. [REQUIRED when active] Configuration and execution
 
-- **Connection mode:** `pg` via Supabase **transaction pooler** (port 6543) for transactions with prepared statements disabled (PgBouncer compatibility — verify exact driver settings against official connection guidance at implementation); supabase-js REST for single statements. Connection budget: ≤ 5 server-side connections total (pool max 3 pg + supabase-js) — the app is single-process.
-- **Credential classes (names only, values in `.env`, never in repo/client/logs):** `SUPABASE_URL` (public class), `SUPABASE_SERVICE_ROLE_KEY` (**secret**, server-only), `SUPABASE_ANON_KEY` (public class; unused this phase), `SUPABASE_VAULT_ROOT…` none (Vault managed provider-side).
-- **Types generation:** `supabase gen types` (CLI) or MCP `generate_typescript_types` after each migration; output committed to `src/db/types.ts` (single generated-types owner; drift-checked).
-- **Action authorization:** first migration application requires explicit approval (PLAN §4 row) — G02 design approval alone does not authorize DDL.
+- **Connection mode (decided, doc-grounded against current Supabase connection guidance):** `pg` uses the **shared pooler in session mode (port 5432, host from the dashboard Connect string, user `postgres.<project-ref>`)** — IPv4-compatible on every plan, supports prepared statements and session state required by the long-running Node service's transactions; TLS `sslmode=require` (verify-full preferred with root certificate). Direct connection (IPv6-by-default) becomes the preferred replacement only if verified working on this network at Stage 3. Transaction mode (6543) rejected — no prepared statements/session state. supabase-js uses the Data API over HTTPS independently.
+- **Credential classes (names only, values never in repo/client/logs):**
+  1. **Public:** `SUPABASE_URL` (Data API base), `SUPABASE_PUBLISHABLE_KEY` (publishable/anon key — unused by backend this phase).
+  2. **Server-only Data API secret:** `SUPABASE_SERVICE_ROLE_KEY` — used by supabase-js only. **Never a PostgreSQL password.**
+  3. **Server-only PostgreSQL secret:** `SUPABASE_DB_URL` — session-pooler connection string containing the **separate database password**, used by `pg` only.
+  4. **Development-agent credentials:** Supabase MCP access keys live in ZCode's MCP configuration (agent-side tooling) — **never** in application `.env`, code, runtime, or repository. The application never uses MCP credentials.
+- **Migration application method (decided):** the **Supabase CLI** is installed at Stage 3 (npm devDependency) and is the single migration application path — it records applied identity in the remote `supabase_migrations.schema_migrations` history, keeping committed SQL ↔ remote history ↔ applied schema ↔ generated types consistent. **MCP `execute_sql` is NOT a migration application path** — it is restricted to read-only verification (catalog checks, `query_logs`, advisors) and, only with separate owner authorization, scoped repair; its success alone is never treated as migration-history proof. Any schema change found outside the committed stream is recorded as drift (a finding), never silently adopted.
+- **Verification before any G06/G07/G09 claim:** clean replay of the full stream on an empty database (TC-20), remote-history ↔ committed-file identity check (TC-34), intended-vs-catalog drift comparison, and real-role allow/deny tests (TC-11/TC-28/TC-35). No PASS without all applicable evidence.
+- **Types generation:** `supabase gen types` (CLI) after each migration; output committed to `src/db/types.ts` (single generated-types owner; drift-checked in the build).
+- **Action authorization:** first migration application requires explicit approval (PLAN §4 row) — G02 design approval alone does not authorize DDL, and **no remote migration is applied at design review stage**.
 
 ## 6. [REQUIRED when active] Signals, recovery and release proof
 
 - Provider logs (API/postgres) inspectable via MCP `query_logs` for failure diagnosis; application logs remain primary (OBSERVABILITY.md).
-- Recovery: provider managed backups — **actual backup coverage/retention unverified** (unknown, owner: implementation stage; needed for G16 eventually). Schema recovery = migration replay. No Storage bytes in scope until bucket activated.
+- Recovery: provider managed backups — **actual backup coverage/retention unverified** (unknown, owner: implementation stage; needed for G16 eventually). Schema recovery = migration replay from the committed stream. No Storage bytes in scope until bucket activated.
 - Advisors: security/performance advisors checked after each migration (recorded as evidence inputs, not gate substitutes).
-- Unknowns/decisions: Vault availability on project (verify at implementation); backup retention (verify); exposed-schema settings (verify + record drift); Postgres major version (verify).
+- **Vault security verification (ADR-0002 fail-closed precondition):** at implementation, verify (a) Vault extension availability, (b) decrypted-secret read access is restricted to the service role and not exposed via Data API grants to `anon`/`authenticated`, (c) secret listing does not leak ciphertext or plaintext to non-privileged roles. Vault is adopted **only if available and verified secure**; otherwise cloud-provider credential persistence stays disabled (fail-closed).
+- Unknowns/decisions: Vault availability + privilege security (verify); backup retention (verify); exposed-schema settings (verify + record drift); Postgres major version (verify); network IPv6 availability (Stage 3 connectivity test — decides direct vs session-pooler).

@@ -4,7 +4,7 @@
 | --- | --- |
 | Project ID | AI-RECEPTIONIST |
 | Document ID | BACKEND |
-| Version / date | v0.1 — 2026-10-24 |
+| Version / date | v0.2 — 2026-10-24 (G02 change-request revisions: unresolved-outcome semantics, dual-layer consent, resource admission) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Domain modules, operations, invariants, concurrency and failure behavior |
 | Document lifecycle | review-ready — pending **G02-DESIGN** |
@@ -40,7 +40,7 @@ Implements approved FR-1…FR-18 within the architecture boundaries. Domain deci
 | Extract appointment details | Validated intent | Extraction schema v1 with `known/unknown/ambiguous` per field; server-derived dates resolved against authoritative timezone from business config — never model-derived | `booking_state.extracted` | Missing/ambiguous → ask; INVALID_OUTPUT → retry ≤ 1 then safe error |
 | FAQ answer | Any turn | Answer only from retrieved config; no-match → escalation path | none (read-only) | Out-of-knowledge → FR-12 |
 | Offer slots | Valid extraction complete | Availability from calendar port; business hours/duration/buffers applied server-side; offer expires (config, default 15 min) | `booking_state`: OFFER_SLOT → AWAIT_CONFIRMATION + token + expiry | No slots → alternatives/declined path |
-| Confirm booking | Valid confirmation token, unexpired | **Availability recheck immediately before create (SEC-7)**; explicit decision recorded | `booking_state` RECHECK → CREATE → VERIFY; `appointments` row with `idempotency_key` | Slot taken mid-flow → re-offer; create uncertain → unknown state + reconciliation |
+| Confirm booking | Valid confirmation token, unexpired | **Availability recheck immediately before create (SEC-7)**; explicit decision recorded | `booking_state` RECHECK → CREATE → VERIFY; `appointments` row with `idempotency_key` | Slot taken mid-flow → re-offer; create uncertain → **`UNRESOLVED`** (ADR-0004: identity preserved, search-based reconciliation, human escalation — never auto-FAILED, never re-created with a fresh identity) |
 | Create calendar event | Confirmed + rechecked | Calendar adapter executes write (privileged, backend-only) | `appointments.google_event_id` persisted; audit entry | Duplicate prevented by idempotency key + unique event id (SEC-9) |
 | Cancel / reschedule | Customer token or admin | Ownership check; reschedule re-runs availability | status transitions; calendar cancel/update | Already-cancelled → idempotent no-op result |
 | Admin config changes | Supabase Auth + admin membership | Business config versioned | `business_config` new version row | Takes effect next turn (FR-14) |
@@ -54,7 +54,9 @@ Implements approved FR-1…FR-18 within the architecture boundaries. Domain deci
 - **Transaction owner:** `db/` repositories using a `pg` client (transaction-pooler connection) for atomic operations; supabase-js for single-statement CRUD. Booking transition = one transaction: lock `booking_state` row (`FOR UPDATE`), validate transition, write state + related rows.
 - **Concurrency:** one active conversation enforced by semaphore at HTTP layer (503 `RESOURCE_LIMIT` beyond); inference semaphore = 1; conversation-level writes serialized by row lock.
 - **Idempotency:** customer confirm retried with same token → same result (token consumed once, response cached in state); calendar create carries `idempotency_key` (also stored as Google extended property) + partial unique index on `google_event_id`.
-- **External-effect boundary:** calendar port only; uncertain outcomes (`TIMEOUT` after send) never reported as success or failure — persisted `UNKNOWN` and reconciled by bounded query/lookup retry (≤ 3, exponential backoff), then FAILED + audit + escalation.
+- **External-effect boundary:** calendar port only. Uncertain outcomes (timeout/error after the create request was sent) resolve to exactly one of `created` / `confirmed_absent` / **`unresolved`** — an exhausted reconciliation attempt leaves `unresolved` persisted with the original idempotency identity, escalates for human review, and resumes after process restart (startup sweep + next access + admin trigger); the system never blind-recreates with a fresh identity and never reports an unresolved case as success or failure (ADR-0004 v0.2, TC-36).
+- **Consent enforcement (dual-layer):** the backend boundary refuses recording persistence without an affirmative consent row (trusted-code check) AND the DB trigger `enforce_recording_consent()` independently rejects such inserts even from service_role (DATABASE §3, TC-33).
+- **Resource admission:** before any model load (STT sidecar load or LLM warm-up), an available-memory admission check refuses/queues with `RESOURCE_LIMIT` rather than thrashing the host; STT and LLM are strictly sequential per turn; cold vs warm model latency is measured and reported separately — proposed budgets are provisional measurement targets until measured (ENVIRONMENT §4, TC-37).
 - **Unknown-outcome handling:** all external calls carry AbortSignal timeouts (LLM 30s, STT 30s, calendar 15s); cancellation discards stale results; no silent retries of non-idempotent effects.
 
 ## 5. [OPTIONAL] Jobs, cache and integrations

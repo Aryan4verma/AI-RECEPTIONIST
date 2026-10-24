@@ -4,7 +4,7 @@
 | --- | --- |
 | Project ID | AI-RECEPTIONIST |
 | Document ID | PROGRESS |
-| Version / date | v0.5 — 2026-10-24 |
+| Version / date | v0.6 — 2026-10-24 |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner (name not recorded — pending) |
 | Scope | Durable register for the AI Receptionist **backend + AI phase**. Frontend implementation is explicitly out of scope in this phase (Frontend Master deferred to a separate, explicitly requested phase). |
 | Document lifecycle | draft (living register; sections updated per stage) |
@@ -14,9 +14,9 @@
 
 ## 1. [REQUIRED] Control and current task
 
-- **Task ID / mode:** T2-DESIGN — execution mode, autonomous with mandatory human gates.
-- **Current phase / protocol:** Stage 2 design bundle **complete and review-ready** (protocols 06–11, 14); **stopped at G02-DESIGN human review (protocol 05)**.
-- **Scope of completed work:** Stage 0 discovery (§8); Stage 1 requirements (G01 approved); Stage 2 full design bundle: ARCHITECTURE, BACKEND, DATABASE, SUPABASE, AUTH, API, SECURITY, INTEGRATION, OBSERVABILITY, DEPLOYMENT, RUNBOOK, ENVIRONMENT v0.1 + ADR-0001 (accepted at G01) + ADR-0002…0006 (proposed) + TESTING v0.3 (TC-32). No implementation performed.
+- **Task ID / mode:** T2-DESIGN-REVISION — execution mode, autonomous with mandatory human gates.
+- **Current phase / protocol:** G02 change-request revisions **applied** (protocol 05 recorded decision + 21-style targeted correction; no scope redesign); **stopped at revised G02-DESIGN review (still NEEDS_HUMAN_APPROVAL)**.
+- **Scope of completed work:** Stage 2 design bundle + all seven owner-requested corrections: (1) credential-class separation + session-pooler connection decision (doc-grounded), (2) fail-closed secret storage (ADR-0002 v0.2), (3) retention/consent consistency (consent evidence outlives conversations, dual-layer consent enforcement, storage+row deletion, ADR-0006 v0.2), (4) explicit unresolved calendar outcomes with restart-safe recovery (ADR-0004 v0.2), (5) CLI-only migration path with history/drift/role verification (SUPABASE §5, TC-34), (6) recursion-free RLS via `is_app_admin()` + keyed conversation tokens + independent backend enforcement (AUTH §4), (7) budgets as provisional measurement targets with admission checks (ENVIRONMENT §4, TC-37). TESTING v0.4 (TC-32…TC-37). No implementation, no migrations applied.
 - **Inspected revision / environment:** branch `main`, tracking `origin/main`. Environment facts in §8 unchanged.
 - **Current authorization:** Master execution prompt authorizes Stage 0 discovery work (read-only + register creation) and subsequent staged lifecycle with mandatory human gates. No remote mutation authorization yet.
 
@@ -25,19 +25,20 @@
 | Concern / document ID | Authoritative path / version | Applicability / owner | Approval reference | Dependencies / freshness |
 | --- | --- | --- | --- | --- |
 | PROGRESS | `docs/backend/PROGRESS.md` v0.1 | Register — this file; agent maintains | NONE — pending | Updated every stage |
-| PROJECT | `docs/backend/PROJECT.md` v0.2 — review-ready | Requirements owner | NONE — pending **G01** | Stage 1 + CH-1 (FR-15…FR-18, SEC-14…SEC-16); invalidates on material scope change |
-| PLAN | `docs/backend/PLAN.md` v0.2 — review-ready | Planning owner | NONE — pending **G01** | Stage 1 + CH-1; WIs 1–11 with gate map incl. cloud-provider activation authorization |
-| TESTING | `docs/backend/TESTING.md` v0.2 — review-ready | Verification owner | NONE — pending **G01** | Stage 1 + CH-1; TC-01…TC-31 planned, none executed |
-| ARCHITECTURE | `docs/backend/ARCHITECTURE.md` v0.1 — review-ready | Architecture owner | NONE — pending **G02** | Topology AD-1…AD-9; links all design docs |
-| BACKEND | `docs/backend/BACKEND.md` v0.1 — review-ready | Domain owner | NONE — pending **G02** | State machine, invariants, concurrency |
-| DATABASE | `docs/backend/DATABASE.md` v0.1 — review-ready | Data owner | NONE — pending **G02** | 11-table schema, RLS intent, migrations 0001–0006 plan |
-| SUPABASE | `docs/backend/SUPABASE.md` v0.1 — review-ready | Provider owner | NONE — pending **G02** | Target, credential classes, Vault/backup unknowns |
-| AUTH | `docs/backend/AUTH.md` v0.1 — review-ready | Identity owner | NONE — pending **G02** | Supabase Auth + conversation token; access matrix |
-| API | `docs/backend/API.md` v0.1 — review-ready | Interface owner | NONE — pending **G02** | OP-01…OP-20, error envelope, settings contract (FR-18) |
-| SECURITY | `docs/backend/SECURITY.md` v0.1 — review-ready | Security owner | NONE — pending **G02** | SEC-1…16 control map, SSRF, findings SEC-F1…F3 |
+| PROJECT | `docs/backend/PROJECT.md` v0.2 — **APPROVED (G01, 2026-10-24)** | Requirements owner | G01 ledger §5 | FR-1…FR-18, SEC-1…SEC-16 incl. CH-1; invalidates on material scope change |
+| PLAN | `docs/backend/PLAN.md` v0.2 — **APPROVED (G01, 2026-10-24)** | Planning owner | G01 ledger §5 | WIs 1–11 with gate map incl. cloud-provider activation authorization |
+| TESTING | `docs/backend/TESTING.md` v0.4 — v0.2 scope **APPROVED (G01)** + TC-32…TC-37 design-stage additions pending **G02** | Verification owner | G01 ledger §5 (v0.2 scope) | TC-01…TC-37 planned, none executed |
+| ARCHITECTURE | `docs/backend/ARCHITECTURE.md` v0.2 — review-ready | Architecture owner | NONE — pending **G02** | Topology AD-1…AD-9 (v0.2: fail-closed AD-7, connection mode AD-9); links all design docs |
+| BACKEND | `docs/backend/BACKEND.md` v0.2 — review-ready | Domain owner | NONE — pending **G02** | State machine incl. UNRESOLVED semantics, dual-layer consent, resource admission |
+| DATABASE | `docs/backend/DATABASE.md` v0.2 — review-ready | Data owner | NONE — pending **G02** | 11-table schema, consent-evidence FK, consent trigger, is_app_admin(), migrations 0001–0006 plan |
+| SUPABASE | `docs/backend/SUPABASE.md` v0.2 — review-ready | Provider owner | NONE — pending **G02** | Target, 4 credential classes, session-pooler mode, CLI-only migrations, Vault verification |
+| AUTH | `docs/backend/AUTH.md` v0.2 — review-ready | Identity owner | NONE — pending **G02** | Supabase Auth + keyed conversation tokens; recursion-free access matrix |
+| API | `docs/backend/API.md` v0.2 — review-ready | Interface owner | NONE — pending **G02** | OP-01…OP-20, error envelope incl. CREDENTIAL_STORE_UNAVAILABLE/BOOKING_UNRESOLVED, settings contract (FR-18) |
+| SECURITY | `docs/backend/SECURITY.md` v0.2 — review-ready | Security owner | NONE — pending **G02** | SEC-1…16 control map, SSRF, findings SEC-F1…F5 |
 | INTEGRATION | `docs/backend/INTEGRATION.md` v0.1 — review-ready | Integration owner | NONE — pending **G02** | Frontend handoff journeys incl. AI Models & Providers page |
-| OBSERVABILITY / DEPLOYMENT / RUNBOOK / ENVIRONMENT | `docs/backend/{OBSERVABILITY,DEPLOYMENT,RUNBOOK,ENVIRONMENT}.md` v0.1 — review-ready | Ops owners | NONE — pending **G02** | Signals, release sequence, incidents, config schema |
-| ADRs | `decisions/ADR-0001` (accepted at G01) + `ADR-0002…0006` (proposed) | Design owners | 0001 accepted; 0002–0006 pending **G02** | Platform, secrets (Q7), provider abstraction, calendar, speech, retention (Q4) |
+| OBSERVABILITY / DEPLOYMENT / RUNBOOK | `docs/backend/{OBSERVABILITY,DEPLOYMENT,RUNBOOK}.md` v0.1 — review-ready | Ops owners | NONE — pending **G02** | Signals, release sequence, incidents |
+| ENVIRONMENT | `docs/backend/ENVIRONMENT.md` v0.2 — review-ready | Ops owner | NONE — pending **G02** | Credential-class config schema, session-pooler, provisional budgets + admission checks |
+| ADRs | `decisions/ADR-0001` (accepted at G01) + `ADR-0002/0004/0006` v0.2 + `ADR-0003/0005` v0.1 (proposed) | Design owners | 0001 accepted; 0002–0006 pending **G02** | Platform, fail-closed secrets (Q7), provider abstraction, calendar unresolved-outcomes, speech, retention (Q4) |
 | Application source | Missing — workspace empty; scaffold in Stage 3 **after** G01 + G02 approvals | Implementation owner | NONE — pending | Stages 3+ |
 | Migration stream | Missing — no migrations exist; one authoritative Supabase migration stream intended (owner: project repo `supabase/migrations/` convention, to be confirmed at design) | Data owner | NONE — pending | Stages 2–3 |
 
@@ -69,7 +70,7 @@
 | G01-REQUIREMENTS | Requirements baseline incl. CH-1 multi-provider system | **PASS** — real human decision recorded 2026-10-24 (§5 ledger), bound to PROJECT/PLAN/TESTING v0.2 scope; conditions recorded | Decision 2026-10-24; documents v0.2 | Ledger §5; lifecycle headers updated to approved |
 | Remote repository verification | Push safety check (git policy) | PASS — `git ls-remote https://github.com/Aryan4verma/AI-RECEPTIONIST.git` succeeded 2026-10-24 with empty output: repo exists, credentials valid, zero refs/branches (empty) | Remote `Aryan4verma/AI-RECEPTIONIST`; local HEAD `9add827` at verification | `gh` CLI absent; ls-remote evidence. Push result recorded below |
 | First push to verified remote | Git policy: ordinary commits of completed non-sensitive stages | PASS — `git push -u origin main` 2026-10-24 created `main` on remote; remote SHA verified equal to local | Remote `refs/heads/main` = `1bbd78ab80cba4d0125621990a9d61e841f6f4ae` (CH-1 commit) | Pre-push checks: only `docs/backend/*.md` in history; secret-pattern scan clean; no force-push; skill repos untouched |
-| G02-DESIGN | Full Stage 2 design bundle | **NEEDS_HUMAN_APPROVAL** — bundle review-ready (12 design docs v0.1 + ADR-0002…0006 proposed + TESTING TC-32); decisions requested: approve design + ADR-0002 (Q7 secret storage) + ADR-0006 (Q4 retention table) + Q5 budget proposals | 2026-10-24, bundle at design commit | Decision request in Stage 2 report; protocol 05 |
+| G02-DESIGN | Full Stage 2 design bundle | **NEEDS_HUMAN_APPROVAL (revised)** — change-request revisions applied; bundle now v0.1 docs with G02 corrections + ADR-0002/0004/0006 v0.2 + TESTING v0.4; decisions requested: full design bundle, Q7 fail-closed policy, Q4 retention table (durations still proposals), Q5 provisional budgets | 2026-10-24, revision commit | Decision request in revised G02 report; protocol 05 |
 | G03-CONFIG … G18-FINAL | Later stages | NOT_YET_EXECUTED — future stage boundaries; implementation awaits G02 | — | Later stages |
 
 ## 5. [REQUIRED] Review and authorization ledger
@@ -78,6 +79,7 @@
 | --- | --- | --- | --- | --- |
 | Master execution prompt issued (standing instruction for staged autonomous lifecycle with human gates) | Project owner via ZCode prompt | Full backend + AI phase scope | 2026-10-23 | Autonomous stage advancement; STOP at mandatory human gates (G01, G02, action authorizations); no remote mutation yet |
 | G01-REQUIREMENTS approval | Project owner (Aryan Verma) via ZCode G01 approval message | **PROJECT.md v0.2, PLAN.md v0.2, TESTING.md v0.2** — FR-1…FR-18, SEC-1…SEC-16, approved scope/non-goals/acceptance, CH-1 included | 2026-10-24 | Conditions: **Q1 APPROVED = Supabase/PostgreSQL, project `ogxdszjypswutekqgorb`** (platform only — no blanket schema/destructive/deployment authorization); **Q4 DEFERRED TO G02** — design must prepare privacy/retention/deletion/consent proposal; no persistent recording or customer-personal-data storage until policy + permissions established; cloud provider activation, paid inference, external transmission of real customer data, and real Google Calendar writes remain **separately authorized**; `qwen3:1.7b` preserved as initial local model. Stage 2 must additionally propose: Q5 budgets, Q7 secret storage, provider abstraction/switching, SSRF-safe endpoints, local-first opt-in cloud, Calendar OAuth/concurrency/idempotency, recovery strategies. |
+| G02-DESIGN review decision | Project owner (Aryan Verma) via ZCode G02 review message | Stage 2 design bundle v0.1 + ADR-0002…0006 + Q7/Q4/Q5 proposals | 2026-10-24 | **REQUEST CHANGES — G02 NOT approved.** Direction broadly accepted; architecture/skills/history preserved. Seven targeted correction areas required before re-review: (1) credential & DB-connection design separation (URL/publishable key vs service-role secret vs `pg` connection string vs agent-side MCP credentials; service-role key is not a Postgres password; connection mode chosen per current docs), (2) fail-closed credential storage (no silent AES-GCM fallback; Vault-only unless separately approved; local Ollama unaffected), (3) retention/consent consistency (consent evidence must outlive conversation cascade; storage-object deletion; service-role bypass → dual-layer consent enforcement), (4) uncertain calendar outcomes must stay explicitly unresolved (search-by-identity, never blind re-create, restart-safe recovery, human escalation), (5) one authoritative migration stream with real history/drift/role verification (execute_sql success ≠ history proof; no remote migration now), (6) RLS recursion avoidance + token security + independent backend enforcement, (7) budgets as provisional measurement targets with admission checks and honest cold/warm measurement. Retention durations remain proposals until explicit owner decision. |
 
 ## 6. [OPTIONAL] Incident/recovery handoff
 
@@ -85,7 +87,7 @@ NOT_APPLICABLE — no incidents.
 
 ## 7. [REQUIRED] Resume instruction
 
-- **Next allowed action:** **Human decision on G02-DESIGN** (protocol 05): approve the Stage 2 design bundle (ARCHITECTURE/BACKEND/DATABASE/SUPABASE/AUTH/API/SECURITY/INTEGRATION/OBSERVABILITY/DEPLOYMENT/RUNBOOK/ENVIRONMENT v0.1 + ADR-0003/0004/0005) **plus** the embedded decisions: Q7 (ADR-0002 secret storage — Vault primary, AES-GCM fallback), Q4 (ADR-0006 retention table), Q5 (budgets in ENVIRONMENT/OBSERVABILITY). **No implementation, no migrations, no cloud provider activation, no real Calendar writes until G02 passes.**
+- **Next allowed action:** **Human decision on revised G02-DESIGN** (protocol 05): approve the corrected design bundle (unchanged docs remain v0.1; corrected docs per G02 change request) **plus** the four standing decisions: full design bundle, Q7 (ADR-0002 v0.2 fail-closed: Vault-when-verified-secure, else credential persistence disabled), Q4 (ADR-0006 v0.2 retention table — durations still proposals: transcripts 90 d, recordings 30 d, audit 1 y, consent evidence 3 y, customer anonymization), Q5 (provisional measurement targets in ENVIRONMENT §4). **No implementation, no migrations, no cloud provider activation, no real Calendar writes until G02 passes.**
 - **G01 status:** PASS — decision recorded 2026-10-24 in §5, bound to PROJECT/PLAN/TESTING v0.2. Q1 resolved (Supabase, platform-only approval). Q4 deferred to G02 (now presented in ADR-0006).
 - **After G02 approval:** record decision in §5 ledger → Stage 3 backend foundation (scaffold + migrations per approved design; first-migration application needs its own action authorization per PLAN §4).
 - **Blocking dependencies (independent of G01):** real Calendar work blocked pending credentials/authorization (U2/Q3); any paid cloud provider activation / real credential entry / real customer-data egress requires its own 05 authorization (SEC-15).
