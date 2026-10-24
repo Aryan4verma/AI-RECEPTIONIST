@@ -4,8 +4,9 @@ import type { Env } from "../config/env.js";
 import type { Logger } from "../observability/logger.js";
 import { toEnvelope } from "./errors.js";
 import { registerHealthRoutes, type HealthDeps } from "./health.js";
+import { registerConversationRoutes, type ConversationRouteDeps } from "../http/routes/public/conversations.js";
 
-export interface AppDeps extends HealthDeps {
+export interface AppDeps extends HealthDeps, ConversationRouteDeps {
   env: Env;
   logger: Logger;
 }
@@ -46,6 +47,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   registerHealthRoutes(app, deps);
+  registerConversationRoutes(app, deps);
 
   return app;
 }
