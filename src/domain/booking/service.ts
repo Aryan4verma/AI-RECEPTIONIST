@@ -161,6 +161,7 @@ export class BookingService {
   ): Promise<
     | { bookingState: "CONFIRMED"; appointmentId: string; eventId?: string }
     | { bookingState: "CANCELLED" }
+    | { bookingState: "UNRESOLVED" }
     | { bookingState: "REJECTED" }
     | { bookingState: "UNRESOLVED" }
     | { bookingState: "EXPIRED" }
@@ -194,6 +195,10 @@ export class BookingService {
       if (appointment.status === "cancelled") {
         // Never return an active confirmed booking for a cancelled appointment.
         return { bookingState: "CANCELLED" as const };
+      }
+      if (appointment.status === "unresolved") {
+        // Unverified calendar outcome — never presented as a confirmed booking.
+        return { bookingState: "UNRESOLVED" as const };
       }
       return {
         bookingState: "CONFIRMED",
@@ -528,7 +533,11 @@ export class BookingService {
     const state = await this.deps.bookingState.ensure(conversationId);
     if (state.state === "CONFIRMED" && state.calendarIdempotencyKey) {
       const appt = await this.deps.bookingState.findAppointmentByIdempotencyKey(state.calendarIdempotencyKey);
-      if (appt?.status === "cancelled") return "cancelled"; // never an active confirmed booking
+      // Never report an active confirmed appointment when the outcome is
+      // uncertain: an unresolved cancellation (or any unresolved calendar
+      // operation) presents externally as "pending verification".
+      if (appt?.status === "cancelled") return "cancelled";
+      if (appt?.status === "unresolved") return "pending";
     }
     switch (state.state) {
       case "CONFIRMED":

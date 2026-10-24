@@ -40,7 +40,13 @@ const envSchema = z.object({
   // certificate downloaded from the dashboard by the owner. Never committed.
   SUPABASE_DB_CA_CERT_PATH: z.string().min(1, "required — TLS verification must not be disabled"),
   TOKEN_HASH_SECRET: z.string().min(32),
-  SECRET_MASTER_KEY: z.string().min(32).optional(), // inert unless a fallback store is separately approved (ADR-0002 v0.2)
+  // Optional secrets normalize BLANK values to undefined — an unfilled
+  // .env line must never fail startup (final runtime check 2). Fail-closed
+  // verification applies only when a secret is actually required.
+  SECRET_MASTER_KEY: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().min(32).optional(),
+  ), // inert unless a fallback store is separately approved (ADR-0002 v0.2)
   // Stage 7 only
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
