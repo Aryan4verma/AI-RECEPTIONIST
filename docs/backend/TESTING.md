@@ -4,13 +4,13 @@
 | --- | --- |
 | Project ID | AI-RECEPTIONIST |
 | Document ID | TESTING |
-| Version / date | v0.2 — 2026-10-24 (CH-1: added TC-21…TC-31 provider-system tests; review-ready, not approved) |
+| Version / date | v0.3 — 2026-10-24 (v0.2 scope APPROVED at G01 2026-10-24; TC-32 added as design-stage addition, pending G02) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Acceptance and verification plan for the backend + AI phase |
-| Document lifecycle | review-ready — pending G01-REQUIREMENTS human review |
+| Document lifecycle | approved (v0.2 scope, G01 2026-10-24) + v0.3 design-stage addition pending G02 |
 | Input provenance | `PROJECT.md` v0.1 requirements; master execution prompt §10 verification policy |
 | Related authoritative files | `PROJECT.md`, `PLAN.md`, `PROGRESS.md` |
-| Approval reference | NONE — pending |
+| Approval reference | G01-REQUIREMENTS APPROVED 2026-10-24 for v0.2 scope (TC-01…TC-31); TC-32 pending G02; see `PROGRESS.md` §5 |
 
 ## 1. [REQUIRED] Control and baseline
 
@@ -56,6 +56,7 @@ All rows are **PLANNED** — no check below has been executed. Statuses live in 
 | TC-29 | SEC-14 | Secret disclosure sweep: API keys absent from all HTTP responses (masked display), application logs, error bodies, git history; replacement/removal honored | IT + static | Vitest response assertions + repo grep/log review | PLANNED |
 | TC-30 | SEC-16 | Invalid/unsafe custom endpoint rejected at configuration boundary: internal/private addresses, localhost metadata targets, non-HTTP(S) schemes — SSRF attempts never stored or fetched | IT | Vitest endpoint-validation cases | PLANNED |
 | TC-31 | SEC-15/FR-17 | Unapproved fallback: selected local model fails with no approved cloud fallback configured → safe error, zero cloud egress, denial logged; fallback attempt without explicit approval is denied | IT | Vitest + fixture provider asserting zero outbound calls | PLANNED |
+| TC-32 | SEC-14/FR-16 | Secret-storage mechanism operational (design ADR-0002): credential round-trip via chosen mechanism (Supabase Vault or env-key AES-GCM fallback), key never stored plaintext, masked readback, replace/remove honored | IT | Vitest + mechanism integration check | PLANNED — added at design, pending G02 |
 
 Negative/failure cases are explicit above (TC-02, TC-07, TC-08, TC-10, TC-11, TC-14, TC-16, TC-17, TC-18). Real database, real-model, and real-calendar boundaries use their actual services (RDB/RM/RC) — mocks never substitute where the column names them.
 

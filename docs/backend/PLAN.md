@@ -7,10 +7,10 @@
 | Version / date | v0.2 — 2026-10-24 (CH-1 multi-provider AI model system incorporated; review-ready, not approved) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Bounded execution plan for the backend + AI phase (Stages 0–10 of the master roadmap) |
-| Document lifecycle | review-ready — pending G01-REQUIREMENTS human review |
+| Document lifecycle | approved — G01-REQUIREMENTS (project owner, 2026-10-24) |
 | Input provenance | Human master execution prompt §8 roadmap (2026-10-23); `PROGRESS.md` §8 discovery facts |
 | Related authoritative files | `PROJECT.md`, `TESTING.md`, `PROGRESS.md` |
-| Approval reference | NONE — pending |
+| Approval reference | G01-REQUIREMENTS APPROVED 2026-10-24 — scope v0.2 + Q1 Supabase + Q4 deferral; see `PROGRESS.md` §5 |
 
 ## 1. [REQUIRED] Control and scope
 

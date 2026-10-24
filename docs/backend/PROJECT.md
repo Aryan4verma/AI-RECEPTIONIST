@@ -7,10 +7,10 @@
 | Version / date | v0.2 — 2026-10-24 |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Requirements baseline for the AI Receptionist **backend + AI phase** (frontend out of scope this phase) |
-| Document lifecycle | review-ready — pending G01-REQUIREMENTS human review |
+| Document lifecycle | approved — G01-REQUIREMENTS (project owner, 2026-10-24) |
 | Input provenance | Human master execution prompt (project owner, 2026-10-23); change instruction CH-1 — multi-provider AI model system (project owner, 2026-10-24); discovery facts in `PROGRESS.md` §8 |
 | Related authoritative files | `docs/backend/PLAN.md`, `docs/backend/TESTING.md`, `docs/backend/PROGRESS.md` |
-| Approval reference | NONE — pending |
+| Approval reference | G01-REQUIREMENTS APPROVED 2026-10-24 — scope v0.2 (FR-1…FR-18, SEC-1…SEC-16, CH-1) + Q1 Supabase + Q4 deferral; see `PROGRESS.md` §5 |
 
 ## 1. [REQUIRED] Document control and provenance
 
