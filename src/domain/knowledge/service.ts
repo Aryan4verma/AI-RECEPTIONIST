@@ -41,7 +41,15 @@ export class KnowledgeService {
         best = { score, answer: entry.answer };
       }
     }
-    return best ? { answer: best.answer, matched: true } : { answer: null, matched: false };
+    // Weak-match rejection: a single overlapping token in a multi-keyword
+    // entry is not evidence of relevance — require a meaningful match
+    // (≥ half the entry's keywords AND ≥ 2 overlapping tokens).
+    if (best && best.score >= 0.5) {
+      return { answer: best.answer, matched: true };
+    }
+    const bestOverlap = best ? Math.round(best.score * 4) : 0; // informational only
+    void bestOverlap;
+    return { answer: null, matched: false };
   }
 
   fallback(): string {

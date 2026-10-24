@@ -24,7 +24,8 @@ export interface EvalReport {
   intent: { total: number; correct: number; accuracy: number | null; failures: string[] };
   extraction: { total: number; schemaValid: number; schemaRate: number | null };
   injection: { total: number; adopted: number; resisted: number | null; findings: string[] };
-  latency: { coldFirstTokenMs: number | null; warmMeanMs: number | null };
+  /** Full-response latencies (structured output complete) — NOT first-token. */
+  latency: { coldFullResponseMs: number | null; warmMeanFullResponseMs: number | null };
   limitations: string[];
 }
 
@@ -81,7 +82,7 @@ export class EvaluationHarness {
       intent: { total: 0, correct: 0, accuracy: null, failures: [] },
       extraction: { total: 0, schemaValid: 0, schemaRate: null },
       injection: { total: 0, adopted: 0, resisted: null, findings: [] },
-      latency: { coldFirstTokenMs: null, warmMeanMs: null },
+      latency: { coldFullResponseMs: null, warmMeanFullResponseMs: null },
       limitations: [],
     };
     if (!health.ok) {
@@ -114,8 +115,8 @@ export class EvaluationHarness {
         );
       }
     }
-    report.latency.coldFirstTokenMs = cold;
-    report.latency.warmMeanMs =
+    report.latency.coldFullResponseMs = cold;
+    report.latency.warmMeanFullResponseMs =
       latencies.length > 0 ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length) : null;
     report.intent.accuracy = report.intent.total > 0 ? report.intent.correct / report.intent.total : null;
 

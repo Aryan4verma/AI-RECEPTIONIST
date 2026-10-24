@@ -52,6 +52,7 @@ export function registerConversationRoutes(app: FastifyInstance, deps: Conversat
       reply: turn.reply,
       intent: turn.intent,
       extractionComplete: turn.extractionComplete,
+      offer: turn.offer,
       conversationState: turn.intent === "request_human" ? "escalated" : conversation.status,
     };
   });

@@ -13,6 +13,7 @@ import type { LLMProvider, StructuredRequest } from "../../ai/types.js";
 import type { BookingStateRepo } from "../../db/ports.js";
 import { emptyExtraction, type ExtractionService } from "../extraction/service.js";
 import type { KnowledgeService } from "../knowledge/service.js";
+import type { BookingService } from "../booking/service.js";
 
 export interface ConversationDeps {
   conversations: ConversationRepo;
@@ -26,6 +27,8 @@ export interface ConversationDeps {
   bookingState?: BookingStateRepo;
   /** FR-4 deterministic FAQ knowledge — optional. */
   knowledge?: KnowledgeService;
+  /** Booking orchestration for the offer step of a complete extraction. */
+  booking?: BookingService;
 }
 
 export interface StartedConversation {
@@ -119,28 +122,61 @@ export class ConversationService {
   async handleCustomerTurn(
     conversation: ConversationRow,
     text: string,
-  ): Promise<{ reply: string; intent: IntentResult["intent"]; extractionComplete: boolean | null }> {
+  ): Promise<{
+    reply: string;
+    intent: IntentResult["intent"];
+    extractionComplete: boolean | null;
+    offer?: { slot: string; end: string; expiresAt: string; offerToken: string; durationMinutes: number; timezone: string };
+  }> {
     const intent = await this.classifyIntent(conversation, text);
     let reply: string;
     let extractionComplete: boolean | null = null;
 
     if (intent.intent === "book_appointment" && this.deps.extraction && this.deps.bookingState) {
       const state = await this.deps.bookingState.ensure(conversation.id);
+      if (state.state === "AWAIT_CONFIRMATION") {
+        return { reply: "You have a proposed appointment awaiting your confirmation — shall I book it?", intent: intent.intent, extractionComplete: true };
+      }
+      if (state.state === "UNRESOLVED" || state.state === "CREATE_EVENT" || state.state === "VERIFY_RESULT") {
+        return { reply: "Your booking is being verified; you will be contacted once confirmed.", intent: intent.intent, extractionComplete: true };
+      }
       const current = Object.keys(state.extracted).length > 0
         ? ({ ...emptyExtraction(), ...(state.extracted as object) } as Parameters<ExtractionService["merge"]>[0])
         : null;
       const merged = await this.deps.extraction.mergeTurn(current, text);
-      await this.deps.bookingState.transition({
-        conversationId: conversation.id,
-        expectedState: state.state,
-        event: state.state === "COLLECT_DETAILS" ? "DETAILS_COMPLETE" : "VALIDATION_PASSED",
-        patch: { extracted: merged as unknown as Record<string, unknown> },
-      }).catch(() => undefined); // offer/confirm stages own later transitions
+      // Extraction data persists WITHOUT advancing the booking state machine —
+      // transitions happen only when extraction is complete (inside offer()).
+      await this.deps.bookingState.updateExtracted(
+        conversation.id,
+        merged as unknown as Record<string, unknown>,
+      );
       const missing = this.deps.extraction.missingFields(merged);
       extractionComplete = missing.length === 0;
-      reply = extractionComplete
-        ? "Thank you — I have everything I need. Let me check availability for you."
-        : this.deps.extraction.followUp(missing) ?? "Could you tell me a bit more?";
+      if (!extractionComplete) {
+        reply = this.deps.extraction.followUp(missing) ?? "Could you tell me a bit more?";
+      } else {
+        const resolved = await this.deps.extraction.resolve(merged);
+        if (!resolved || !this.deps.booking) {
+          reply = "Thank you — I have everything I need. Let me check availability for you.";
+        } else {
+          const offer = await this.deps.booking.offer(
+            conversation.id, resolved.start, resolved.durationMinutes, resolved.timezone,
+          );
+          const when = new Intl.DateTimeFormat("en-GB", {
+            dateStyle: "full", timeStyle: "short", timeZone: resolved.timezone,
+          }).format(new Date(offer.start));
+          reply = `I can offer ${when} (${resolved.durationMinutes} minutes, ${resolved.timezone}). Shall I book it?`;
+          return {
+            reply,
+            intent: intent.intent,
+            extractionComplete,
+            offer: {
+              slot: offer.start, end: offer.end, expiresAt: offer.expiresAt,
+              offerToken: offer.offerToken, durationMinutes: offer.durationMinutes, timezone: offer.timezone,
+            },
+          };
+        }
+      }
     } else if (intent.intent === "ask_question" && this.deps.knowledge) {
       const answer = await this.deps.knowledge.answer(text);
       reply = answer.matched && answer.answer ? answer.answer : this.deps.knowledge.fallback();

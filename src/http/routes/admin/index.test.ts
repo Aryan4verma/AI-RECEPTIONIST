@@ -31,6 +31,10 @@ async function buildHarness(opts: { member?: boolean; verify?: "ok" | "fail" } =
   const customers = new MemoryCustomerRepo();
   const audit = new MemoryAuditRepo();
   const bookingState = new MemoryBookingStateRepo();
+  const calendar = new MockCalendarAdapter();
+  const bookingService = new BookingService({
+    bookingState, calendar, tokenHashSecret: SECRET, offerTtlMinutes: 15,
+  });
   const admin: AdminRouteDeps = {
     verifyAdmin: async (token) =>
       opts.verify === "fail" || token !== "admin-token"
@@ -41,6 +45,7 @@ async function buildHarness(opts: { member?: boolean; verify?: "ok" | "fail" } =
     customers,
     conversations,
     appointments: bookingState,
+    booking: bookingService,
     audit,
   };
   const conversationService = new ConversationService({
@@ -57,12 +62,10 @@ async function buildHarness(opts: { member?: boolean; verify?: "ok" | "fail" } =
     pgPool: { query: async () => ({ rows: [] }) } as never,
     ollamaBase: "http://localhost:11434",
     conversationService,
-    bookingService: new BookingService({
-      bookingState, calendar: new MockCalendarAdapter(), tokenHashSecret: SECRET, offerTtlMinutes: 15,
-    }),
+    bookingService,
     admin,
   });
-  return { app, customers, audit, conversations };
+  return { app, customers, audit, conversations, bookingService, bookingState, calendar };
 }
 
 const authHeaders = { authorization: "Bearer admin-token", "content-type": "application/json" };

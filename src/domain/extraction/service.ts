@@ -7,12 +7,14 @@ export const EXTRACTION_SCHEMA_VERSION = 1;
 
 export type FieldName = "customer_name" | "contact" | "purpose" | "requested_time" | "duration_minutes" | "meeting_type";
 
+// duration_minutes is intentionally NOT required: the authoritative business
+// configuration provides the default duration (FR-3/FR-14), so an unstated
+// duration never blocks the flow and is never guessed.
 const REQUIRED_FIELDS: FieldName[] = [
   "customer_name",
   "contact",
   "purpose",
   "requested_time",
-  "duration_minutes",
   "meeting_type",
 ];
 
@@ -130,14 +132,20 @@ export class ExtractionService {
     const defaults = await this.businessDefaults();
     const timezone = defaults.defaultTimezone;
     const rawTime = extracted.requested_time.state === "known" ? extracted.requested_time.value : "";
-    const local = new Date(rawTime);
-    if (Number.isNaN(local.getTime())) {
+    if (Number.isNaN(Date.parse(rawTime))) {
       throw new AppError("INVALID_INPUT", "The provided appointment time could not be interpreted.", {
         field: "requested_time",
       });
     }
-    const offsetMinutes = tzOffsetMinutes(local, timezone);
-    const utc = new Date(local.getTime() - offsetMinutes * 60_000);
+    // Offset-qualified RFC 3339 (…Z / ±hh:mm) is ALREADY absolute — use it as-is.
+    // A naive wall-clock value is interpreted ONCE in the business timezone
+    // with a two-pass conversion that stays correct across DST transitions.
+    let utc: Date;
+    if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(rawTime.trim())) {
+      utc = new Date(rawTime);
+    } else {
+      utc = zonedWallClockToUtc(rawTime, timezone);
+    }
     const durationMinutes =
       extracted.duration_minutes.state === "known"
         ? extracted.duration_minutes.value
@@ -195,4 +203,24 @@ export function emptyExtraction(): ExtractionResult {
     duration_minutes: unknown("not provided"),
     meeting_type: unknown("not provided"),
   };
+}
+
+/**
+ * Interpret a naive wall-clock string in an IANA timezone and convert to UTC.
+ * Two-pass: guess with the offset at the naive instant, recompute the offset
+ * at the corrected instant — DST-safe (quality correction: timezone review).
+ */
+function zonedWallClockToUtc(wallClock: string, timezone: string): Date {
+  const parsed = new Date(wallClock.includes("T") ? wallClock : wallClock.replace(" ", "T") + "Z");
+  if (Number.isNaN(parsed.getTime())) {
+    throw new AppError("INVALID_INPUT", "The provided appointment time could not be interpreted.", {
+      field: "requested_time",
+    });
+  }
+  let guess = parsed.getTime();
+  for (let i = 0; i < 2; i++) {
+    const offsetMinutes = tzOffsetMinutes(new Date(guess), timezone);
+    guess = parsed.getTime() - offsetMinutes * 60_000;
+  }
+  return new Date(guess);
 }

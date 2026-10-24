@@ -9,6 +9,7 @@ import type {
 } from "../../../db/ports.js";
 import { createAdminGuard, requireAdmin, type AdminVerifier } from "../../../auth/adminGuard.js";
 import { AppError } from "../../../server/errors.js";
+import type { BookingService } from "../../../domain/booking/service.js";
 import { registerConversationAdminRoutes } from "./conversations.js";
 
 const CONFIG_CATEGORIES = [
@@ -40,7 +41,8 @@ export interface AdminRouteDeps {
   config: BusinessConfigRepo;
   customers: CustomerRepo;
   conversations: ConversationRepo;
-  appointments: Pick<BookingStateRepo, "findOpenAppointmentByConversation" | "findAppointmentByIdempotencyKey" | "updateAppointmentOutcome" | "transition">;
+  appointments: BookingStateRepo;
+  booking: BookingService;
   audit: AuditRepo;
 }
 

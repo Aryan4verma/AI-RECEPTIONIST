@@ -69,6 +69,15 @@ export class PgConversationRepo implements ConversationRepo {
     );
     return rows.map(mapMessage).reverse();
   }
+
+  async list(limit = 50): Promise<ConversationRow[]> {
+    const { rows } = await this.pool.query(
+      `select id, customer_id, channel, status, access_token_hash, consent_recording, started_at
+       from public.conversations order by started_at desc limit $1`,
+      [limit],
+    );
+    return rows.map(mapConversation);
+  }
 }
 
 const BOOKING_PATCH_COLUMNS: Partial<Record<string, string>> = {
@@ -314,6 +323,33 @@ export class PgBookingStateRepo implements BookingStateRepo {
       `update public.booking_state set calendar_idempotency_key = $2, updated_at = now() where conversation_id = $1`,
       [conversationId, idempotencyKey],
     );
+  }
+
+  async updateExtracted(conversationId: string, extracted: Record<string, unknown>): Promise<void> {
+    await this.pool.query(
+      `update public.booking_state set extracted = $2, updated_at = now() where conversation_id = $1`,
+      [conversationId, JSON.stringify(extracted)],
+    );
+  }
+
+  async listAppointments(limit = 50): Promise<Array<Record<string, unknown>>> {
+    const { rows } = await this.pool.query(
+      `select id, conversation_id, customer_id, service_type, purpose, scheduled_start, scheduled_end,
+              duration_minutes, meeting_type, timezone, status, google_event_id, idempotency_key, created_at
+       from public.appointments order by created_at desc limit $1`,
+      [limit],
+    );
+    return rows;
+  }
+
+  async findAppointmentById(id: string): Promise<Record<string, unknown> | null> {
+    const { rows } = await this.pool.query(
+      `select id, conversation_id, customer_id, service_type, purpose, scheduled_start, scheduled_end,
+              duration_minutes, meeting_type, timezone, status, google_event_id, idempotency_key, created_at
+       from public.appointments where id = $1`,
+      [id],
+    );
+    return rows[0] ?? null;
   }
 }
 

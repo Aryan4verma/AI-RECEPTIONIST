@@ -511,6 +511,42 @@ export class BookingService {
     }
   }
 
+  /**
+   * Administrative cancellation (correction 6): a database status change never
+   * implies a Calendar event was cancelled. The event is cancelled through the
+   * provider when its existence can be established; an inconclusive provider
+   * state REFUSES the cancellation (nothing is changed) instead of pretending.
+   */
+  async adminCancel(appointmentId: string): Promise<{ status: "cancelled"; calendarCancelled: boolean }> {
+    const appt = await this.deps.bookingState.findAppointmentById(appointmentId);
+    if (!appt) throw new AppError("NOT_FOUND", "Appointment not found.");
+    if (appt["status"] === "cancelled") return { status: "cancelled", calendarCancelled: false };
+    const identity = appt["idempotencyKey"] as string | null;
+    let calendarCancelled = false;
+
+    if (identity) {
+      const search = await this.deps.calendar.findByIdempotencyKey(identity);
+      if (search.status === "found") {
+        const cancel = await this.deps.calendar.cancelEvent(search.eventId);
+        if (cancel.status === "failed") {
+          throw new AppError("CALENDAR_UNAVAILABLE", "The calendar could not cancel the event. Nothing was changed.", {
+            reason: cancel.reason,
+          });
+        }
+        if (cancel.status === "unresolved") {
+          throw new AppError("CALENDAR_UNAVAILABLE", "Calendar cancellation is unverified; the appointment remains unchanged.", {});
+        }
+        calendarCancelled = true;
+      } else if (search.status === "inconclusive") {
+        throw new AppError("CALENDAR_UNAVAILABLE", "Event existence could not be verified; cancellation refused to avoid a false record.", {});
+      }
+      // verified_absent: no event exists — DB-only cancellation is truthful.
+    }
+
+    await this.deps.bookingState.updateAppointmentOutcome(appointmentId, { status: "cancelled" });
+    return { status: "cancelled", calendarCancelled };
+  }
+
   async cancel(conversationId: string): Promise<void> {
     const state = await this.deps.bookingState.ensure(conversationId);
     if (isTerminal(state.state) || state.state === "UNRESOLVED") return; // idempotent no-op

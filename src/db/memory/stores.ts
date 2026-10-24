@@ -72,6 +72,10 @@ export class MemoryConversationRepo implements ConversationRepo {
   async listMessages(conversationId: string, limit = 50): Promise<MessageRow[]> {
     return this.messages.filter((m) => m.conversationId === conversationId).slice(-limit);
   }
+
+  async list(limit = 50): Promise<ConversationRow[]> {
+    return [...this.rows.values()].slice(-limit);
+  }
 }
 
 export class MemoryBookingStateRepo implements BookingStateRepo {
@@ -240,6 +244,22 @@ export class MemoryBookingStateRepo implements BookingStateRepo {
   async repairIdentity(conversationId: string, idempotencyKey: string): Promise<void> {
     const row = this.rows.get(conversationId);
     if (row) row.calendarIdempotencyKey = idempotencyKey;
+  }
+
+  async updateExtracted(conversationId: string, extracted: Record<string, unknown>): Promise<void> {
+    const row = this.rows.get(conversationId);
+    if (row) {
+      row.extracted = extracted;
+      row.updatedAt = new Date();
+    }
+  }
+
+  async listAppointments(limit = 50): Promise<Array<Record<string, unknown>>> {
+    return this.appointments.slice(-limit);
+  }
+
+  async findAppointmentById(id: string): Promise<Record<string, unknown> | null> {
+    return this.appointments.find((a) => a["id"] === id) ?? null;
   }
 }
 

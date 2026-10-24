@@ -69,6 +69,7 @@ export interface ConversationRepo {
     contentType?: MessageRow["contentType"];
   }): Promise<MessageRow>;
   listMessages(conversationId: string, limit?: number): Promise<MessageRow[]>;
+  list(limit?: number): Promise<ConversationRow[]>;
 }
 
 export interface BookingStateRepo {
@@ -137,6 +138,10 @@ export interface BookingStateRepo {
   } | null>;
   /** Recovery-path repair: adopt an identity discovered on an open appointment. */
   repairIdentity(conversationId: string, idempotencyKey: string): Promise<void>;
+  /** Persist extraction data WITHOUT a state-machine transition (FR-3). */
+  updateExtracted(conversationId: string, extracted: Record<string, unknown>): Promise<void>;
+  listAppointments(limit?: number): Promise<Array<Record<string, unknown>>>;
+  findAppointmentById(id: string): Promise<Record<string, unknown> | null>;
 }
 
 export interface ConsentRepo {
