@@ -99,6 +99,18 @@ export interface LocalModel {
   parameterSize?: string;
 }
 
+
+export interface GoogleCalendarStatus {
+  configured: boolean;
+  connected: boolean;
+  calendarId: string | null;
+  accessRole: string | null;
+  connectedAt: string | null;
+  connectedBy: string | null;
+  lastError: string | null;
+  lastVerifiedAt: string | null;
+}
+
 export const adminApi = {
   customers: (t: string) => admin<{ customers: Customer[] }>("GET", "/api/v1/admin/customers", t),
   createCustomer: (t: string, body: Partial<Customer>) =>
@@ -164,4 +176,12 @@ export const adminApi = {
       t,
       { providerId, modelId },
     ),
+
+  // Google Calendar connection (Stage 7) — metadata only; tokens never leave the server.
+  googleStatus: (t: string) =>
+    admin<GoogleCalendarStatus>("GET", "/api/v1/admin/integrations/google/status", t),
+  googleConnect: (t: string) =>
+    admin<{ authUrl: string }>("POST", "/api/v1/admin/integrations/google/connect", t, {}),
+  googleDisconnect: (t: string) =>
+    admin<{ disconnected: boolean }>("POST", "/api/v1/admin/integrations/google/disconnect", t, {}),
 };

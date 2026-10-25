@@ -12,6 +12,8 @@ import { AppError } from "../../../server/errors.js";
 import type { BookingService } from "../../../domain/booking/service.js";
 import { registerConversationAdminRoutes } from "./conversations.js";
 import { registerModelAdminRoutes } from "./models.js";
+import { registerGoogleIntegrationRoutes } from "./integrations.js";
+import type { GoogleIntegrationService } from "../../../calendar/google/integration.js";
 
 const CONFIG_CATEGORIES = [
   "business_info",
@@ -46,6 +48,8 @@ export interface AdminRouteDeps {
   appointments: BookingStateRepo;
   booking: BookingService;
   audit: AuditRepo;
+  /** Present when the Google OAuth environment is configured (Stage 7). */
+  googleIntegration?: GoogleIntegrationService | null;
 }
 
 /**
@@ -58,6 +62,9 @@ export function registerAdminRoutes(app: FastifyInstance, deps: AdminRouteDeps) 
   const guard = createAdminGuard({ verify: deps.verifyAdmin, isMember: deps.isAdminMember });
   app.addHook("preHandler", async (request, reply) => {
     if (!request.url.startsWith("/api/v1/admin/") || request.url === "/api/v1/admin") return;
+    // The OAuth callback authenticates via the single-use state nonce —
+    // the browser arriving from accounts.google.com has no bearer header.
+    if (request.url.startsWith("/api/v1/admin/integrations/google/callback")) return;
     await guard(request, reply);
   });
 
@@ -65,6 +72,7 @@ export function registerAdminRoutes(app: FastifyInstance, deps: AdminRouteDeps) 
   registerCustomerRoutes(app, deps);
   registerConversationAdminRoutes(app, deps);
   registerModelAdminRoutes(app, { registry: deps.registry, audit: deps.audit });
+  registerGoogleIntegrationRoutes(app, { googleIntegration: deps.googleIntegration ?? null });
 }
 
 function registerConfigRoutes(app: FastifyInstance, deps: AdminRouteDeps) {

@@ -53,6 +53,8 @@ const envSchema = z.object({
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
   GOOGLE_OAUTH_REDIRECT_URI: z.string().optional(),
+  /** Dedicated Calendar ID — every Google operation targets exactly this calendar. */
+  GOOGLE_CALENDAR_ID: z.string().optional(),
 });
 
 const localEnvSchema = envSchema.extend({
@@ -104,10 +106,22 @@ export function loadEnv(
       parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
     );
   }
+  const requiredGoogle = [
+    "GOOGLE_OAUTH_CLIENT_ID",
+    "GOOGLE_OAUTH_CLIENT_SECRET",
+    "GOOGLE_OAUTH_REDIRECT_URI",
+    "GOOGLE_CALENDAR_ID",
+  ] as const;
   if (parsed.data.CALENDAR_MODE === "google") {
-    throw new ConfigValidationError([
-      "CALENDAR_MODE=google requires Google OAuth credentials and separate action authorization (Q3) — use mock",
-    ]);
+    const missing = requiredGoogle.filter((k) => !parsed.data[k]);
+    if (missing.length > 0) {
+      throw new ConfigValidationError([
+        `CALENDAR_MODE=google requires ${missing.join(", ")} — complete the owner setup in .env (see .env.example), or use CALENDAR_MODE=mock`,
+      ]);
+    }
+    // Configuration alone does not authorize real Calendar writes: the
+    // adapter stays inert until the owner completes the OAuth connection,
+    // and genuine event writes remain gated by the Q3 action authorization.
   }
   return parsed.data;
 }

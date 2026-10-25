@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
-import { adminApi, type AppointmentRow, type ConversationRow, type Customer } from "../../lib/admin";
-import { Badge, Card, CardHead, ErrorNote, Spinner } from "../../components/ui";
+import { adminApi, type AppointmentRow, type ConversationRow, type Customer, type GoogleCalendarStatus } from "../../lib/admin";
+import { Badge, Button, Card, CardHead, ErrorNote, Spinner } from "../../components/ui";
 import { Photo } from "../../components/Photo";
 import { formatDate, formatDateTime, relativeTime, STATUS_LABELS, statusTone } from "../../lib/format";
 import { ApiError } from "../../lib/api";
@@ -24,9 +24,12 @@ export default function Overview() {
         appointments: AppointmentRow[];
         customers: Customer[];
         greeting: string | null;
+        google: GoogleCalendarStatus | null;
         ai: { reachable: boolean; models: number; activeProvider: string | null };
       }
   >({ state: "loading" });
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [gcalBusy, setGcalBusy] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -37,8 +40,9 @@ export default function Overview() {
       adminApi.providers(user.token).catch(() => ({ providers: [] as { isActive: boolean; displayName: string; modelId: string | null }[] })),
       adminApi.localModels(user.token).catch(() => ({ ollama: { reachable: false, models: [] as unknown[] } })),
       adminApi.config(user.token, "business_info").catch(() => null),
+      adminApi.googleStatus(user.token).catch(() => null),
     ])
-      .then(([c, a, cu, p, m, cfg]) => {
+      .then(([c, a, cu, p, m, cfg, gcal]) => {
         const active = (p.providers ?? []).find((x) => x.isActive);
         const greeting = typeof (cfg?.content as { greeting?: unknown } | undefined)?.greeting === "string"
           ? ((cfg?.content as { greeting: string }).greeting)
@@ -49,6 +53,7 @@ export default function Overview() {
           appointments: a.appointments,
           customers: cu.customers,
           greeting,
+          google: gcal,
           ai: {
             reachable: m.ollama?.reachable ?? false,
             models: m.ollama?.models?.length ?? 0,
@@ -57,7 +62,7 @@ export default function Overview() {
         });
       })
       .catch((e) => setLoad({ state: "error", message: e instanceof ApiError ? e.message : "Failed to load data." }));
-  }, [user]);
+  }, [user, refreshTick]);
 
   if (load.state === "loading")
     return (
@@ -178,22 +183,32 @@ export default function Overview() {
           )}
         </Card>
 
-        {/* Receptionist status */}
-        <Card>
-          <CardHead title="Receptionist status" sub="Model & inference service" actions={<IconChip className="size-4 text-ink-3" />} />
-          <div className="space-y-3.5 px-5 py-4">
-            <StatusRow label="Active model" value={load.ai.activeProvider ?? (load.ai.reachable ? "Local default (qwen3)" : "Not set")} />
-            <StatusRow
-              label="Local inference"
-              value={load.ai.reachable ? `Reachable · ${load.ai.models} installed` : "Unreachable"}
-              tone={load.ai.reachable ? "ok" : "warn"}
-            />
-            <StatusRow label="Voice recognition" value="Local, RAM-gated" tone="warn" />
-            <p className="pt-1 text-[11.5px] leading-relaxed text-ink-3">
-              Real Google Calendar writes and cloud inference stay off until separately authorized by the business owner.
-            </p>
-          </div>
-        </Card>
+        {/* Status column: receptionist + Google Calendar connection */}
+        <div className="space-y-5">
+          <Card>
+            <CardHead title="Receptionist status" sub="Model & inference service" actions={<IconChip className="size-4 text-ink-3" />} />
+            <div className="space-y-3.5 px-5 py-4">
+              <StatusRow label="Active model" value={load.ai.activeProvider ?? (load.ai.reachable ? "Local default (qwen3)" : "Not set")} />
+              <StatusRow
+                label="Local inference"
+                value={load.ai.reachable ? `Reachable · ${load.ai.models} installed` : "Unreachable"}
+                tone={load.ai.reachable ? "ok" : "warn"}
+              />
+              <StatusRow label="Voice recognition" value="Local, RAM-gated" tone="warn" />
+              <p className="pt-1 text-[11.5px] leading-relaxed text-ink-3">
+                Real Google Calendar writes and cloud inference stay off until separately authorized by the business owner.
+              </p>
+            </div>
+          </Card>
+
+          <GoogleCalendarCard
+            user={user}
+            status={load.google}
+            busy={gcalBusy}
+            onChanged={() => setRefreshTick((t) => t + 1)}
+            setBusy={setGcalBusy}
+          />
+        </div>
       </div>
 
       {/* Recent conversations */}
@@ -277,6 +292,91 @@ function StatCard({
 
 function EmptyRow({ text }: { text: string }) {
   return <p className="px-5 py-8 text-center text-[13px] leading-relaxed text-ink-3">{text}</p>;
+}
+
+/**
+ * Google Calendar connection (Stage 7). Shows the real connection status;
+ * Connect opens the Google consent page in a new tab (the callback returns
+ * to the backend, then the status refreshes). Tokens never reach the browser.
+ */
+function GoogleCalendarCard({
+  user,
+  status,
+  busy,
+  setBusy,
+  onChanged,
+}: {
+  user: { email: string; token: string } | null;
+  status: GoogleCalendarStatus | null;
+  busy: boolean;
+  setBusy: (b: boolean) => void;
+  onChanged: () => void;
+}) {
+  async function connect() {
+    if (!user) return;
+    setBusy(true);
+    try {
+      const { authUrl } = await adminApi.googleConnect(user.token);
+      window.open(authUrl, "_blank", "noopener");
+      // The consent round trip takes the owner a while; refresh on return.
+      window.addEventListener("focus", () => onChanged(), { once: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function disconnect() {
+    if (!user) return;
+    setBusy(true);
+    try {
+      await adminApi.googleDisconnect(user.token);
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Card>
+      <CardHead title="Google Calendar" sub="Real bookings on your dedicated test calendar" />
+      <div className="space-y-3.5 px-5 py-4">
+        {!status ? (
+          <p className="text-[13px] leading-relaxed text-ink-3">
+            Integration status unavailable — the Google environment variables are not set on the server.
+          </p>
+        ) : !status.configured ? (
+          <p className="text-[13px] leading-relaxed text-ink-3">
+            Not configured. Add the Google OAuth variables to the server .env (see .env.example) — the mock calendar
+            remains active until then.
+          </p>
+        ) : status.connected ? (
+          <>
+            <StatusRow label="Connection" value="Connected" tone="ok" />
+            <StatusRow label="Calendar" value={status.calendarId ?? "—"} />
+            <StatusRow label="Access" value={status.accessRole ?? "—"} tone={["owner", "writer"].includes(status.accessRole ?? "") ? "ok" : "warn"} />
+            {status.lastError && <p className="text-[12px] leading-relaxed text-danger-fg">{status.lastError}</p>}
+            <p className="text-[11.5px] leading-relaxed text-ink-3">
+              Events are written only after a customer explicitly confirms, and real-calendar operations require the
+              owner's Q3 authorization.
+            </p>
+            <Button variant="danger" size="sm" onClick={() => void disconnect()} disabled={busy} loading={busy}>
+              Disconnect
+            </Button>
+          </>
+        ) : (
+          <>
+            <StatusRow label="Connection" value="Not connected" tone="warn" />
+            {status.lastError && <p className="text-[12px] leading-relaxed text-danger-fg">{status.lastError}</p>}
+            <p className="text-[11.5px] leading-relaxed text-ink-3">
+              Connect your Google account to verify real availability. The mock calendar stays active until
+              CALENDAR_MODE=google is set.
+            </p>
+            <Button size="sm" onClick={() => void connect()} disabled={busy} loading={busy}>
+              Connect Google account
+            </Button>
+          </>
+        )}
+      </div>
+    </Card>
+  );
 }
 
 function StatusRow({ label, value, tone }: { label: string; value: string; tone?: "ok" | "warn" }) {

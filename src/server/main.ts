@@ -13,6 +13,8 @@ import {
   PgCustomerRepo,
 } from "../db/pg/repos.js";
 import { MockCalendarAdapter } from "../calendar/mockAdapter.js";
+import { GoogleCalendarAdapter } from "../calendar/google/googleCalendarAdapter.js";
+import { GoogleIntegrationService } from "../calendar/google/integration.js";
 import type { CalendarProvider } from "../calendar/types.js";
 import type { LLMProvider } from "../ai/types.js";
 import { OllamaProvider } from "../ai/ollamaProvider.js";
@@ -90,12 +92,37 @@ export async function createProductionApp(
   const extraction = new ExtractionService({ provider: inferenceProvider, config });
   const knowledge = new KnowledgeService(config);
 
+  // Google Calendar (Stage 7 / Q3): the integration service is composed when
+  // the OAuth environment is configured; the adapter becomes the active
+  // CalendarProvider ONLY in CALENDAR_MODE=google. The adapter stays inert
+  // until the owner completes the OAuth connection in the admin console, and
+  // genuine event writes remain gated by the Q3 action authorization.
+  let googleIntegration: GoogleIntegrationService | null = null;
+  let calendar: CalendarProvider = opts.overrides?.calendar ?? new MockCalendarAdapter();
+  if (env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET && env.GOOGLE_OAUTH_REDIRECT_URI && env.GOOGLE_CALENDAR_ID) {
+    googleIntegration = new GoogleIntegrationService({
+      config,
+      secretStore,
+      audit,
+      creds: {
+        clientId: env.GOOGLE_OAUTH_CLIENT_ID,
+        clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
+        redirectUri: env.GOOGLE_OAUTH_REDIRECT_URI,
+        calendarId: env.GOOGLE_CALENDAR_ID,
+      },
+    });
+    if (env.CALENDAR_MODE === "google") {
+      calendar = new GoogleCalendarAdapter({ integration: googleIntegration, calendarId: env.GOOGLE_CALENDAR_ID });
+      logger.info({ calendarId: env.GOOGLE_CALENDAR_ID }, "calendar mode: google (inert until the OAuth connection is completed in the admin console)");
+    }
+  }
+
   // The escalation hook resolves lazily — the booking service is constructed
   // before the conversation service, and the hook only fires at runtime.
   let conversationServiceRef: ConversationService | undefined;
   const bookingService = new BookingService({
     bookingState,
-    calendar: opts.overrides?.calendar ?? new MockCalendarAdapter(),
+    calendar,
     tokenHashSecret: env.TOKEN_HASH_SECRET,
     offerTtlMinutes: 15,
     audit,
@@ -167,6 +194,7 @@ export async function createProductionApp(
       appointments: bookingState,
       booking: bookingService,
       audit,
+      googleIntegration,
     },
   });
 
