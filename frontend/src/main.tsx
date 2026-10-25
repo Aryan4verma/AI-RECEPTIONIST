@@ -1,8 +1,10 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import "./styles.css";
 import Chat from "./pages/customer/Chat";
+
+const Call = lazy(() => import("./pages/customer/Call"));
 import AdminLogin from "./pages/admin/Login";
 import AdminLayout from "./pages/admin/Layout";
 import Overview from "./pages/admin/Overview";
@@ -36,6 +38,14 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Chat />} />
+        <Route
+          path="/call"
+          element={
+            <Suspense fallback={<div className="flex min-h-dvh items-center justify-center bg-pine-950 text-[#f4f1e8]/70">Opening the call screen…</div>}>
+              <Call />
+            </Suspense>
+          }
+        />
         <Route
           path="/admin"
           element={

@@ -3,18 +3,23 @@ import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, us
 /* ---------- Button ---------- */
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "danger" | "ghost";
-  size?: "sm" | "md";
+  size?: "sm" | "md" | "lg";
   loading?: boolean;
 };
 
 export function Button({ variant = "primary", size = "md", loading, className = "", children, disabled, ...rest }: ButtonProps) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors select-none disabled:opacity-40 disabled:cursor-not-allowed";
-  const sizes = size === "sm" ? "px-3 py-1.5 text-[13px]" : "px-4 py-2.5 text-sm";
+    "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-150 select-none " +
+    "disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-px";
+  const sizes = {
+    sm: "px-3 py-1.5 text-[13px]",
+    md: "px-4 py-2.5 text-sm",
+    lg: "px-5 py-3 text-[15px]",
+  }[size];
   const variants = {
-    primary: "bg-pine-600 text-white hover:bg-pine-700 active:bg-pine-800",
-    secondary: "bg-surface text-ink border border-line-strong hover:border-ink-3 hover:bg-canvas",
-    danger: "bg-white text-danger-fg border border-danger-fg/30 hover:bg-danger-bg",
+    primary: "bg-pine-700 text-[#f4f1e8] shadow-card hover:bg-pine-800 hover:shadow-slip",
+    secondary: "bg-raised text-ink border border-line-strong hover:border-ink-3 hover:bg-canvas",
+    danger: "bg-raised text-danger-fg border border-danger-fg/35 hover:bg-danger-bg",
     ghost: "text-ink-2 hover:text-ink hover:bg-pine-50",
   }[variant];
   return (
@@ -34,16 +39,44 @@ export function Spinner({ className = "size-5" }: { className?: string }) {
   );
 }
 
+/* ---------- Surfaces ---------- */
+export function Card({ className = "", children }: { className?: string; children: ReactNode }) {
+  return <section className={`rounded-card border border-line bg-surface shadow-card ${className}`}>{children}</section>;
+}
+
+export function CardHead({ title, sub, actions }: { title: string; sub?: string; actions?: ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
+      <div className="min-w-0">
+        <h2 className="font-display text-[17px] leading-tight text-ink">{title}</h2>
+        {sub && <p className="mt-0.5 text-[12.5px] text-ink-3">{sub}</p>}
+      </div>
+      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+    </div>
+  );
+}
+
+export function StatTile({ label, value, hint, tone }: { label: string; value: ReactNode; hint?: string; tone?: "accent" }) {
+  return (
+    <div className="rounded-tile border border-line bg-surface px-4 py-3.5">
+      <p className="micro">{label}</p>
+      <p className={`mt-1.5 font-display text-[28px] leading-none tabular ${tone === "accent" ? "text-pine-700" : "text-ink"}`}>{value}</p>
+      {hint && <p className="mt-1.5 text-[11.5px] text-ink-3">{hint}</p>}
+    </div>
+  );
+}
+
 /* ---------- Badge ---------- */
-export function Badge({ tone = "neutral", children }: { tone?: "success" | "warn" | "danger" | "info" | "neutral"; children: ReactNode }) {
+export function Badge({ tone = "neutral", children }: { tone?: "success" | "warn" | "danger" | "info" | "neutral" | "accent"; children: ReactNode }) {
   const tones = {
-    success: "bg-success-bg text-success-fg",
-    warn: "bg-warn-bg text-warn-fg",
-    danger: "bg-danger-bg text-danger-fg",
-    info: "bg-info-bg text-info-fg",
-    neutral: "bg-canvas text-ink-2 border border-line",
+    success: "bg-success-bg text-success-fg border-success-fg/20",
+    warn: "bg-warn-bg text-warn-fg border-warn-fg/20",
+    danger: "bg-danger-bg text-danger-fg border-danger-fg/20",
+    info: "bg-info-bg text-info-fg border-info-fg/20",
+    neutral: "bg-canvas text-ink-2 border-line-strong",
+    accent: "bg-pine-50 text-pine-700 border-pine-200",
   }[tone];
-  return <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${tones}`}>{children}</span>;
+  return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11.5px] font-semibold ${tones}`}>{children}</span>;
 }
 
 /* ---------- Field / Input ---------- */
@@ -62,7 +95,7 @@ export function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <label htmlFor={htmlFor} className="block text-[13px] font-semibold text-ink-2">
+      <label htmlFor={htmlFor} className="block text-[12.5px] font-semibold text-ink-2">
         {label}
       </label>
       {children}
@@ -75,7 +108,7 @@ export function Field({
 export function Input({ className = "", ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
-      className={`w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-3/70 focus:border-pine-600 focus:outline-none focus:ring-2 focus:ring-pine-600/15 ${className}`}
+      className={`w-full rounded-lg border border-line-strong bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-3/70 focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-600/15 ${className}`}
       {...rest}
     />
   );
@@ -84,7 +117,7 @@ export function Input({ className = "", ...rest }: InputHTMLAttributes<HTMLInput
 export function Textarea({ className = "", ...rest }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
-      className={`w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-3/70 focus:border-pine-600 focus:outline-none focus:ring-2 focus:ring-pine-600/15 font-mono ${className}`}
+      className={`w-full rounded-lg border border-line-strong bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-3/70 focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-600/15 font-mono ${className}`}
       {...rest}
     />
   );
@@ -154,12 +187,12 @@ export function Modal({
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-ink/30" onClick={onClose} aria-hidden="true" />
+      <div className="absolute inset-0 bg-pine-950/40 backdrop-blur-[2px]" onClick={onClose} aria-hidden="true" />
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative w-full max-w-md rounded-card border border-line bg-raised p-6 shadow-slip rise"
+        className="relative w-full max-w-md rounded-card border border-line bg-raised p-6 shadow-pop rise"
       >
         <h2 className="font-display text-xl text-ink">{title}</h2>
         <div className="mt-3 text-sm text-ink-2">{children}</div>
@@ -176,12 +209,12 @@ export function Toast({ tone, children, onClose }: { tone: "info" | "error" | "s
     return () => clearTimeout(t);
   }, [onClose]);
   const tones = {
-    info: "bg-ink text-canvas",
+    info: "bg-pine-900 text-[#f4f1e8]",
     error: "bg-danger-fg text-white",
     success: "bg-success-fg text-white",
   }[tone];
   return (
-    <div className={`pointer-events-auto fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-xl px-4 py-2.5 text-sm font-medium shadow-slip rise ${tones}`} role="status">
+    <div className={`pointer-events-auto fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-xl px-4 py-2.5 text-sm font-medium shadow-pop rise ${tones}`} role="status">
       {children}
     </div>
   );

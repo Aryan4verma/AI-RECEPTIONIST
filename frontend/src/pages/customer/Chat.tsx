@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, postAudio, ApiError, type Offer, type TurnResult } from "../../lib/api";
 import { Badge, Button, ErrorNote, Modal, Spinner, Toast } from "../../components/ui";
 import { formatDateTime } from "../../lib/format";
+import { IconArrowRight, IconArrowUp, IconCalendar, IconChat, IconMic, IconPhone, IconShield, IconSparkle, IconWaveform } from "../../components/icons";
 
 /* ---------- Types ---------- */
 interface Message {
@@ -64,60 +66,66 @@ function OfferSlip({
     const verifying = pending.outcome === "UNRESOLVED";
     const cancelled = pending.outcome === "CANCELLED";
     return (
-      <div className={`rise mx-auto mt-2 w-full max-w-md rounded-card border p-5 shadow-slip ${ok ? "border-pine-200 bg-pine-50" : verifying ? "border-warn-fg/25 bg-warn-bg" : "border-line bg-raised"}`}>
-        <div className="flex items-center justify-between">
+      <div className={`rise mx-auto mt-3 w-full max-w-md overflow-hidden rounded-card border shadow-slip ${ok ? "border-pine-200 bg-pine-50" : verifying ? "border-warn-fg/25 bg-warn-bg" : "border-line bg-surface"}`}>
+        <div className="flex items-center justify-between px-5 pt-4">
           <span className="micro">{ok ? "Appointment confirmed" : verifying ? "Verifying with the calendar" : cancelled ? "Appointment cancelled" : "Not booked"}</span>
           {ok && <Badge tone="success">Confirmed</Badge>}
           {verifying && <Badge tone="warn">Verifying</Badge>}
           {cancelled && <Badge tone="neutral">Cancelled</Badge>}
         </div>
-        <p className="mt-2 font-display text-lg leading-snug text-ink">{formatDateTime(o.slot)}</p>
-        <p className="mt-1 text-sm text-ink-2">
-          {o.durationMinutes} minutes · {o.timezone}
-        </p>
-        <p className="mt-3 text-[13px] text-ink-2">
-          {ok
-            ? "You're all set. We've saved this appointment — you'll receive a confirmation."
-            : verifying
-              ? "We're double-checking the calendar. Your booking is being verified — you'll be contacted once confirmed. Nothing else is needed from you."
-              : cancelled
-                ? "This appointment was cancelled at your request. You can book a new one anytime."
-                : "This time wasn't booked. You can ask for another slot whenever you're ready."}
-        </p>
-        {ok && (
-          <button
-            onClick={onCancelAsk}
-            disabled={cancelling}
-            className="mt-3 text-xs font-medium text-ink-2 underline underline-offset-2 hover:text-danger-fg disabled:opacity-50"
-          >
-            {cancelling ? "Cancelling…" : "Cancel this appointment"}
-          </button>
-        )}
+        <div className="px-5 pb-5 pt-2.5">
+          <p className="font-display text-lg leading-snug text-ink">{formatDateTime(o.slot)}</p>
+          <p className="mt-1 text-sm text-ink-2">
+            {o.durationMinutes} minutes · {o.timezone}
+          </p>
+          <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
+            {ok
+              ? "You're all set. We've saved this appointment — you'll receive a confirmation."
+              : verifying
+                ? "We're double-checking the calendar. Your booking is being verified — you'll be contacted once confirmed. Nothing else is needed from you."
+                : cancelled
+                  ? "This appointment was cancelled at your request. You can book a new one anytime."
+                  : "This time wasn't booked. You can ask for another slot whenever you're ready."}
+          </p>
+          {ok && (
+            <button
+              onClick={onCancelAsk}
+              disabled={cancelling}
+              className="mt-3 text-xs font-medium text-ink-2 underline underline-offset-2 hover:text-danger-fg disabled:opacity-50"
+            >
+              {cancelling ? "Cancelling…" : "Cancel this appointment"}
+            </button>
+          )}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="rise mx-auto mt-2 w-full max-w-md rounded-card border border-line bg-raised p-5 shadow-slip">
-      <div className="flex items-center justify-between">
-        <span className="micro">Proposed appointment</span>
-        <span className={`micro tabular ${expired || mins < 3 ? "text-danger-fg" : ""}`}>
+    <div className="rise mx-auto mt-3 w-full max-w-md overflow-hidden rounded-card border border-line bg-surface shadow-slip">
+      <div className="flex items-center justify-between border-b border-dashed border-line px-5 py-3">
+        <span className="micro flex items-center gap-1.5">
+          <IconCalendar className="size-3.5" /> Proposed appointment
+        </span>
+        <span className={`micro tabular ${expired || mins < 3 ? "text-danger-fg" : "text-pine-700"}`}>
           {expired ? "expired" : `holds ${mins}:${String(secs).padStart(2, "0")}`}
         </span>
       </div>
-      <p className="mt-2 font-display text-xl leading-snug text-ink">{formatDateTime(o.slot)}</p>
-      <p className="mt-1 text-sm text-ink-2">
-        {o.durationMinutes} minutes · {o.timezone}
-      </p>
-      <div className="mt-4 flex gap-2">
-        <Button className="flex-1" disabled={expired || pending.busy} loading={pending.busy && pending.decided === "accept"} onClick={() => onConfirm("accept")}>
-          Confirm booking
-        </Button>
-        <Button variant="secondary" disabled={expired || pending.busy} onClick={() => onConfirm("decline")}>
-          Not now
-        </Button>
+      <div className="px-5 pb-5 pt-3">
+        <p className="font-display text-xl leading-snug text-ink">{formatDateTime(o.slot)}</p>
+        <p className="mt-1 text-sm text-ink-2">
+          {o.durationMinutes} minutes · {o.timezone}
+        </p>
+        <div className="mt-4 flex gap-2">
+          <Button className="flex-1" disabled={expired || pending.busy} loading={pending.busy && pending.decided === "accept"} onClick={() => onConfirm("accept")}>
+            Confirm booking
+          </Button>
+          <Button variant="secondary" disabled={expired || pending.busy} onClick={() => onConfirm("decline")}>
+            Not now
+          </Button>
+        </div>
+        {expired && <p className="mt-2 text-center text-xs text-ink-3">This offer expired — ask for another time.</p>}
       </div>
-      {expired && <p className="mt-2 text-center text-xs text-ink-3">This offer expired — ask for another time.</p>}
     </div>
   );
 }
@@ -269,14 +277,14 @@ export default function Chat() {
     }
   }
 
-  /* ---- Voice ---- */
+  /* ---- Voice message (recording sent as a message — distinct from a call) ---- */
   async function toggleRecording() {
     if (recording) {
       recorderRef.current?.stop();
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setToast({ tone: "error", msg: "Voice input isn't supported in this browser — please type" });
+      setToast({ tone: "error", msg: "Voice messages aren't supported in this browser — please type" });
       return;
     }
     try {
@@ -380,19 +388,24 @@ export default function Chat() {
   }
 
   /* ---------- Render ---------- */
+  const inConversation = phase.kind === "chat" || phase.kind === "starting";
+
   return (
-    <div className="flex h-dvh flex-col bg-canvas">
+    /* Height is locked to the viewport ONLY inside a conversation (anchored
+       transcript). The landing/ended views use natural document flow so long
+       content scrolls the page instead of nesting scrollbars. */
+    <div className={`bg-canvas ${inConversation ? "flex h-dvh flex-col" : "flex min-h-dvh flex-col"}`}>
       {/* Header */}
-      <header className="border-b border-line bg-surface/80 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-4 py-3.5 sm:px-6">
+      <header className="sticky top-0 z-20 border-b border-line bg-surface/85 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-5 py-3 sm:px-8">
+          <Link to="/" className="flex items-center gap-3 rounded-lg" aria-label="Cleardesk home">
+            <Mark />
+            <span className="leading-tight">
+              <span className="block font-display text-[18px] font-semibold tracking-tight text-ink">Cleardesk</span>
+              <span className="block text-[10.5px] font-medium uppercase tracking-[0.14em] text-ink-3">AI receptionist</span>
+            </span>
+          </Link>
           <div className="flex items-center gap-2.5">
-            <Logo />
-            <div className="leading-tight">
-              <p className="font-display text-[17px] font-semibold text-ink">Cleardesk</p>
-              <p className="text-[11px] text-ink-3">AI receptionist</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
             {phase.kind === "chat" && !sessionEnded && (
               <>
                 <label className="hidden items-center gap-1.5 text-xs text-ink-2 sm:flex" title="Read replies aloud">
@@ -404,41 +417,45 @@ export default function Chat() {
                 </Button>
               </>
             )}
-            <a href="/admin" className="text-xs font-medium text-ink-2 underline-offset-2 hover:text-pine-700 hover:underline">
+            <a href="/admin" className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-ink-2 underline-offset-2 hover:text-pine-700 hover:underline">
               Staff sign-in
             </a>
           </div>
         </div>
       </header>
 
-      {/* Body */}
-      <main ref={scrollRef} className="pane-scroll mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-4 sm:px-6">
-        {phase.kind === "idle" && (
-          <div className="py-6">
-            <Landing onStart={start} error={error} />
-          </div>
-        )}
-        {phase.kind === "starting" && (
-          <div className="flex flex-col items-center gap-3 py-24 text-ink-3">
+      {/* Landing — natural page flow */}
+      {phase.kind === "idle" && <Landing onStart={start} error={error} />}
+
+      {phase.kind === "starting" && (
+        <main className="flex flex-1 items-center justify-center">
+          <div className="flex flex-col items-center gap-3 text-ink-3">
             <Spinner />
             <p className="text-sm">Connecting you to the receptionist…</p>
           </div>
-        )}
-        {phase.kind === "ended" && (
-          <div className="flex flex-col items-center gap-4 py-24 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-pine-50 text-pine-600">
+        </main>
+      )}
+
+      {phase.kind === "ended" && (
+        <main className="flex flex-1 items-center justify-center px-5">
+          <div className="rise flex flex-col items-center gap-4 py-16 text-center">
+            <div className="flex size-12 items-center justify-center rounded-full bg-pine-50 text-pine-700">
               <svg className="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                 <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
             <p className="font-display text-2xl text-ink">Session ended</p>
-            <p className="max-w-sm text-sm text-ink-2">Thanks for chatting. Start a new conversation anytime.</p>
+            <p className="max-w-sm text-sm leading-relaxed text-ink-2">Thanks for chatting. Start a new conversation anytime.</p>
             <Button variant="secondary" onClick={() => { setMessages([]); setPendingOffer(null); setPhase({ kind: "idle" }); }}>
               New conversation
             </Button>
           </div>
-        )}
-        {phase.kind === "chat" && (
+        </main>
+      )}
+
+      {/* Conversation — viewport-locked, transcript anchored to the composer */}
+      {phase.kind === "chat" && (
+        <main ref={scrollRef} className="pane-scroll mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-4 sm:px-6">
           <div className="flex min-h-full flex-col justify-end py-6">
             {restored && messages.length === 0 && (
               <div className="mx-auto mb-4 max-w-md rounded-lg border border-line bg-info-bg px-4 py-3 text-[13px] text-info-fg">
@@ -460,10 +477,10 @@ export default function Chat() {
                 cancelling={cancelling}
               />
             )}
-            {error && phase.kind === "chat" && <div className="pt-2"><ErrorNote>{error}</ErrorNote></div>}
+            {error && <div className="pt-2"><ErrorNote>{error}</ErrorNote></div>}
           </div>
-        )}
-      </main>
+        </main>
+      )}
 
       {/* Composer */}
       {phase.kind === "chat" && sessionEnded && (
@@ -494,16 +511,13 @@ export default function Chat() {
                 aria-pressed={recording}
                 title={recording ? "Stop recording" : "Record a voice message (not a phone call)"}
                 className={`flex size-11 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                  recording ? "rec-pulse border-danger-fg bg-danger-fg text-white" : "border-line-strong bg-surface text-ink hover:border-pine-600 hover:text-pine-600"
+                  recording ? "rec-pulse border-danger-fg bg-danger-fg text-white" : "border-line-strong bg-raised text-ink hover:border-pine-600 hover:text-pine-700"
                 }`}
               >
                 {recording ? (
                   <span className="block size-3 rounded-[3px] bg-white" />
                 ) : (
-                  <svg className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                    <rect x="9" y="3" width="6" height="11" rx="3" />
-                    <path d="M5 11a7 7 0 0014 0M12 18v3" strokeLinecap="round" />
-                  </svg>
+                  <IconMic className="size-5" />
                 )}
               </button>
               <textarea
@@ -518,13 +532,10 @@ export default function Chat() {
                     send(input);
                   }
                 }}
-                className="max-h-36 min-h-11 flex-1 resize-none rounded-xl border border-line-strong bg-surface px-4 py-3 text-sm text-ink placeholder:text-ink-3/70 focus:border-pine-600 focus:outline-none focus:ring-2 focus:ring-pine-600/15"
+                className="max-h-36 min-h-11 flex-1 resize-none rounded-xl border border-line-strong bg-raised px-4 py-3 text-sm text-ink placeholder:text-ink-3/70 focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-600/15"
               />
-              <Button onClick={() => send(input)} disabled={!input.trim() || sending || recording} loading={sending} className="h-11 shrink-0">
-                Send
-                <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                  <path d="M5 12h14m-6-6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+              <Button onClick={() => send(input)} disabled={!input.trim() || sending || recording} loading={sending} className="h-11 shrink-0" aria-label="Send message">
+                <IconArrowUp className="size-4" />
               </Button>
             </div>
             <div className="mt-2 flex items-center justify-between">
@@ -567,9 +578,9 @@ export default function Chat() {
 }
 
 /* ---------- Sub-components ---------- */
-function Logo() {
+function Mark({ className = "size-9" }: { className?: string }) {
   return (
-    <div className="flex size-9 items-center justify-center rounded-lg bg-pine-600 font-display text-lg font-semibold text-white" aria-hidden="true">
+    <div className={`flex items-center justify-center rounded-lg bg-pine-800 font-display text-lg font-semibold text-[#f4f1e8] ${className}`} aria-hidden="true">
       C
     </div>
   );
@@ -577,42 +588,153 @@ function Logo() {
 
 function Landing({ onStart, error }: { onStart: (c: "text" | "voice") => void; error: string | null }) {
   return (
-    <div className="rise flex flex-col items-center py-10 text-center sm:py-16">
-      <div className="mb-6 flex size-14 items-center justify-center rounded-2xl bg-pine-600 font-display text-2xl font-semibold text-white shadow-slip" aria-hidden="true">
-        C
-      </div>
-      <h1 className="max-w-xl font-display text-4xl font-semibold leading-[1.15] text-ink sm:text-5xl">
-        The front desk that<br />never steps away.
-      </h1>
-      <p className="mt-4 max-w-md text-[15px] leading-relaxed text-ink-2">
-        Ask questions, book an appointment, or change one — just like talking to the receptionist.
-      </p>
-      {error && <div className="mt-6 w-full max-w-sm"><ErrorNote>{error}</ErrorNote></div>}
-      <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-        <Button size="md" onClick={() => onStart("text")} className="px-6">
-          Start chatting
-        </Button>
-        <Button size="md" variant="secondary" onClick={() => onStart("voice")} className="px-6">
-          <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-            <rect x="9" y="3" width="6" height="11" rx="3" />
-            <path d="M5 11a7 7 0 0014 0M12 18v3" strokeLinecap="round" />
-          </svg>
-          Send a voice message
-        </Button>
-      </div>
-      <p className="mt-4 text-xs text-ink-3">Voice messages are recordings you send in this chat — not a phone call.</p>
-      <p className="mt-10 max-w-sm text-xs leading-relaxed text-ink-3">
-        Handled by an AI receptionist. Conversations aren't recorded unless you allow it. For anything urgent, just ask for a
-        person.
-      </p>
-    </div>
+    <>
+      <main className="paper-texture">
+        {/* Hero — asymmetric editorial split */}
+        <div className="mx-auto grid w-full max-w-5xl gap-12 px-5 pb-16 pt-14 sm:px-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-16 lg:pt-20">
+          <div>
+            <p className="micro flex items-center gap-2 text-pine-700">
+              <IconSparkle className="size-3.5" />
+              The always-on front desk
+            </p>
+            <h1 className="mt-5 font-display text-[2.6rem] font-medium leading-[1.08] tracking-[-0.01em] text-ink sm:text-6xl">
+              Every call answered.
+              <br />
+              <span className="font-display-italic font-normal text-pine-700">Every visitor greeted.</span>
+            </h1>
+            <p className="mt-5 max-w-md text-[15.5px] leading-relaxed text-ink-2">
+              Cleardesk is your AI receptionist — it answers questions from your own business knowledge, books and
+              changes appointments in your calendar, and hands over to a person the moment it should.
+            </p>
+
+            {error && <div className="mt-6 w-full max-w-sm"><ErrorNote>{error}</ErrorNote></div>}
+
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <Button size="lg" onClick={() => onStart("text")} className="sm:px-6">
+                <IconChat className="size-4.5" />
+                Start chatting
+              </Button>
+              <Button size="lg" variant="secondary" onClick={() => onStart("voice")} className="sm:px-6">
+                <IconMic className="size-4.5" />
+                Send a voice message
+              </Button>
+            </div>
+            <div className="mt-4.5 flex flex-wrap items-center gap-x-5 gap-y-2">
+              <a
+                href="/call"
+                className="group inline-flex items-center gap-2 rounded-lg text-sm font-semibold text-pine-700 underline-offset-4 hover:underline"
+              >
+                <span className="flex size-8 items-center justify-center rounded-full border border-pine-200 bg-pine-50 transition-colors group-hover:bg-pine-100">
+                  <IconPhone className="size-4" />
+                </span>
+                Call the AI receptionist
+                <IconArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+              </a>
+              <span className="hidden h-4 w-px bg-line-strong sm:block" aria-hidden="true" />
+              <p className="text-xs text-ink-3">Voice messages and calls are recordings &amp; speech — not phone calls.</p>
+            </div>
+          </div>
+
+          {/* Product vignette — a composed preview, clearly labeled */}
+          <div className="relative hidden lg:block" aria-hidden="true">
+            <div className="absolute -top-6 right-4 z-10 rotate-1">
+              <div className="w-64 rounded-card border border-line bg-surface p-4 shadow-slip">
+                <p className="micro flex items-center gap-1.5 text-pine-700">
+                  <IconCalendar className="size-3.5" /> Proposed appointment
+                </p>
+                <p className="mt-2 font-display text-[15px] leading-snug text-ink">Friday, 14 November · 10:00</p>
+                <p className="mt-0.5 text-xs text-ink-2">45 minutes · Europe/Berlin</p>
+                <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-canvas-deep">
+                  <div className="h-full w-2/3 rounded-full bg-pine-600" />
+                </div>
+                <p className="mt-1.5 text-[10.5px] font-medium tabular text-ink-3">holds 9:47</p>
+              </div>
+            </div>
+            <div className="relative -rotate-1 rounded-card border border-line bg-surface p-5 shadow-card">
+              <p className="micro">Preview · example conversation</p>
+              <div className="mt-4 space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-pine-50 font-display text-[13px] font-semibold text-pine-700">C</div>
+                  <div className="rounded-xl rounded-tl-sm border border-line bg-raised px-3.5 py-2 text-[13.5px] leading-relaxed text-ink">
+                    Good morning — how can I help you today?
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <div className="rounded-xl rounded-tr-sm bg-pine-700 px-3.5 py-2 text-[13.5px] leading-relaxed text-[#f4f1e8]">
+                    I'd like to book a consultation this week
+                  </div>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-pine-50 font-display text-[13px] font-semibold text-pine-700">C</div>
+                  <div className="rounded-xl rounded-tl-sm border border-line bg-raised px-3.5 py-2 text-[13.5px] leading-relaxed text-ink">
+                    Of course. I can offer Friday at 10:00 — shall I book it?
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Feature band */}
+        <div className="border-t border-line bg-canvas-deep/50">
+          <div className="mx-auto grid w-full max-w-5xl gap-px overflow-hidden px-5 sm:grid-cols-3 sm:px-8">
+            {[
+              {
+                icon: <IconChat className="size-4.5" />,
+                title: "Grounded answers",
+                body: "Replies come from your business knowledge — hours, services, FAQs — never invented facts.",
+              },
+              {
+                icon: <IconCalendar className="size-4.5" />,
+                title: "Real bookings",
+                body: "Appointments are proposed, confirmed by you, and written to the calendar with a verifiable record.",
+              },
+              {
+                icon: <IconShield className="size-4.5" />,
+                title: "Private by default",
+                body: "Conversations aren't recorded unless you allow it, and a person is always one request away.",
+              },
+            ].map((f) => (
+              <div key={f.title} className="py-7 sm:px-6 sm:first:pl-0 sm:last:pr-0">
+                <div className="flex size-9 items-center justify-center rounded-lg border border-pine-200 bg-pine-50 text-pine-700">
+                  {f.icon}
+                </div>
+                <h3 className="mt-3.5 font-display text-[16.5px] text-ink">{f.title}</h3>
+                <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-2">{f.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Disclosure band */}
+        <div className="border-t border-line">
+          <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-5 py-8 sm:px-8">
+            <p className="max-w-2xl text-xs leading-relaxed text-ink-3">
+              Handled by an AI receptionist. Conversations aren't recorded unless you allow it. For anything urgent, just
+              ask for a person. Illustrative previews on this page are examples — your receptionist answers with your
+              business's real, saved knowledge.
+            </p>
+            <IconWaveform className="size-6 text-line-strong" />
+          </div>
+        </div>
+      </main>
+
+      <footer className="mt-auto border-t border-line bg-surface">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-5 py-7 sm:px-8">
+          <p className="font-display text-sm text-ink">Cleardesk</p>
+          <a href="/admin" className="text-xs font-medium text-ink-2 hover:text-pine-700">
+            Staff sign-in
+          </a>
+        </div>
+      </footer>
+    </>
   );
 }
 
 function ChatBubble({ message: m }: { message: Message }) {
   if (m.role === "system") {
     return (
-      <p className="mx-auto max-w-md text-center text-[13px] text-ink-3" role="note">
+      <p className="mx-auto max-w-md text-center text-[13px] leading-relaxed text-ink-3" role="note">
         {m.text}
       </p>
     );
@@ -628,9 +750,9 @@ function ChatBubble({ message: m }: { message: Message }) {
           C
         </div>
       )}
-      <div className={`max-w-[78%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed ${mine ? "rounded-br-md bg-pine-600 text-white" : "rounded-bl-md border border-line bg-surface text-ink"}`}>
+      <div className={`max-w-[78%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed ${mine ? "rounded-br-md bg-pine-700 text-[#f4f1e8]" : "rounded-bl-md border border-line bg-surface text-ink shadow-card"}`}>
         {m.transcript && mine && (
-          <span className="micro mb-1 block text-white/60" title="Transcribed from your voice">
+          <span className="micro mb-1 block !text-[#f4f1e8]/60" title="Transcribed from your voice">
             voice
           </span>
         )}
@@ -646,7 +768,7 @@ function TypingRow() {
       <div className="mr-2.5 mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-pine-50 font-display text-[13px] font-semibold text-pine-700" aria-hidden="true">
         C
       </div>
-      <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-md border border-line bg-surface px-4 py-3">
+      <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-md border border-line bg-surface px-4 py-3 shadow-card">
         <span className="typing-dot size-1.5 rounded-full bg-ink-3" />
         <span className="typing-dot size-1.5 rounded-full bg-ink-3" />
         <span className="typing-dot size-1.5 rounded-full bg-ink-3" />

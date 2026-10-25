@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button, ErrorNote, Field, Input } from "../../components/ui";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { supabaseConfigured } from "../../lib/admin";
+import { IconShield } from "../../components/icons";
 
 export default function AdminLogin() {
   const { signIn } = useAdminAuth();
@@ -27,13 +28,13 @@ export default function AdminLogin() {
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-canvas p-4">
+    <div className="paper-texture flex min-h-dvh items-center justify-center bg-canvas p-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-3 flex size-11 items-center justify-center rounded-xl bg-pine-600 font-display text-lg font-semibold text-white" aria-hidden="true">
+          <div className="mx-auto mb-3 flex size-11 items-center justify-center rounded-xl bg-pine-800 font-display text-lg font-semibold text-[#f4f1e8]" aria-hidden="true">
             C
           </div>
-          <h1 className="font-display text-2xl text-ink">Cleardesk Console</h1>
+          <h1 className="font-display text-[24px] leading-tight text-ink">Cleardesk Console</h1>
           <p className="mt-1 text-sm text-ink-2">Sign in to manage your receptionist.</p>
         </div>
         <form onSubmit={submit} className="space-y-4 rounded-card border border-line bg-raised p-6 shadow-slip">
@@ -60,7 +61,8 @@ export default function AdminLogin() {
           <Button type="submit" loading={busy} disabled={!supabaseConfigured()} className="w-full">
             Sign in
           </Button>
-          <p className="text-center text-xs text-ink-3">
+          <p className="flex items-start justify-center gap-1.5 text-center text-[11.5px] leading-relaxed text-ink-3">
+            <IconShield className="mt-px size-3.5 shrink-0" />
             Administrator accounts are provisioned by the business owner. Access requires membership in the admin list.
           </p>
         </form>
