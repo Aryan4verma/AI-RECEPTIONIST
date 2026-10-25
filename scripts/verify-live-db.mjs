@@ -4,6 +4,20 @@
 // queries. Never prints credential values. Exits 0 only when every check passes.
 import "dotenv/config";
 import { pathToFileURL } from "node:url";
+import { readdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+
+function committedMigrations() {
+  const dir = new URL("../supabase/migrations/", import.meta.url);
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .map((f) => {
+      const m = /^(\d+)_(.+)\.sql$/.exec(f);
+      const hash = createHash("sha256").update(readFileSync(new URL(f, dir))).digest("hex").slice(0, 16);
+      return { file: f, version: m?.[1] ?? "", name: m?.[2] ?? "", hash };
+    })
+    .filter((x) => x.version);
+}
 import { loadEnv } from "../dist/config/env.js";
 import { createDbClients } from "../dist/db/clients.js";
 
@@ -65,12 +79,25 @@ export async function verify(pool) {
   checks.push(
     await run(
       pool,
-      "remote migration history (6 applied)",
-      `select version from supabase_migrations.schema_migrations order by version`,
-      (rows) => ({
-        ok: rows.length === 6,
-        detail: rows.map((r) => r.version).join(", "),
-      }),
+      "migration stream identity (committed files == remote history, hashes recorded)",
+      `select version, name from supabase_migrations.schema_migrations order by version`,
+      (rows) => {
+        // Complete-stream comparison, not a count: every committed file must
+        // appear remotely as version+name, and vice versa. File SHA-256 hashes
+        // are recorded as evidence (the remote table stores no hashes — an
+        // explicit, documented limitation; catalog checks cover structure).
+        const committed = committedMigrations();
+        const remoteKeys = new Set(rows.map((r) => `${r.version}:${r.name}`));
+        const localKeys = new Set(committed.map((m) => `${m.version}:${m.name}`));
+        const identical =
+          remoteKeys.size === localKeys.size && [...remoteKeys].every((k) => localKeys.has(k));
+        return {
+          ok: identical && committed.length > 0,
+          detail: identical
+            ? committed.map((m) => `${m.version}_${m.name}#${m.hash}`).join(", ")
+            : `remote=[${[...remoteKeys].join("|")}] committed=[${[...localKeys].join("|")}]`,
+        };
+      },
     ),
   );
 

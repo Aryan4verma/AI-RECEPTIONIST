@@ -191,3 +191,37 @@ export interface BusinessConfigRepo {
   latest(category: string): Promise<{ content: Record<string, unknown>; version: number } | null>;
   insertVersion(category: string, content: Record<string, unknown>, version: number, updatedBy: string | null): Promise<void>;
 }
+
+export interface ModelProviderRow {
+  id: string;
+  kind: "local" | "cloud";
+  adapter: "ollama" | "openai_compatible";
+  displayName: string;
+  baseUrl: string | null;
+  modelId: string | null;
+  capabilities: Record<string, unknown>;
+  status: "unverified" | "ok" | "error";
+  lastError: string | null;
+  credentialRef: string | null; // Vault secret id — never the key itself
+  isActive: boolean;
+}
+
+export interface ModelProviderRepo {
+  list(): Promise<ModelProviderRow[]>;
+  findById(id: string): Promise<ModelProviderRow | null>;
+  create(input: {
+    kind: ModelProviderRow["kind"];
+    adapter: ModelProviderRow["adapter"];
+    displayName: string;
+    baseUrl?: string;
+    modelId?: string;
+    capabilities?: Record<string, unknown>;
+    credentialRef?: string;
+    isActive?: boolean;
+  }): Promise<ModelProviderRow>;
+  update(
+    id: string,
+    patch: Partial<Pick<ModelProviderRow, "displayName" | "baseUrl" | "modelId" | "capabilities" | "status" | "lastError" | "credentialRef" | "isActive">>,
+  ): Promise<void>;
+  remove(id: string): Promise<void>;
+}

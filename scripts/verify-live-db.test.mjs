@@ -48,7 +48,14 @@ describe("verify() check contract (repair finding 1: no shared mutable state)", 
     // call-counting pool. Contract: results are independent objects.
     const queries = [
       fullGreen,
-      [{ version: "1" }, { version: "2" }, { version: "3" }, { version: "4" }, { version: "5" }, { version: "6" }],
+      [
+        { version: "20261024000001", name: "extensions_private_schema" },
+        { version: "20261024000002", name: "core_tables" },
+        { version: "20261024000003", name: "booking_and_calendar" },
+        { version: "20261024000004", name: "ai_providers" },
+        { version: "20261024000005", name: "consent_and_records" },
+        { version: "20261024000006", name: "rls_policies_grants" },
+      ],
       [{ anon_select: false, auth_select: true, auth_insert_messages: false, svc_insert: true, svc_delete_audit: false }],
       [{ tgname: "enforce_recording_consent", tgenabled: "O" }],
       [{ proname: "is_app_admin", proconfig: ['search_path=""'] }, { proname: "enforce_recording_consent", proconfig: ['search_path=""'] }],
@@ -68,7 +75,7 @@ describe("verify() check contract (repair finding 1: no shared mutable state)", 
     let call = 0;
     const badRows = [
       fullGreen.map((r) => ({ ...r, rls: false })), // RLS off -> FAIL
-      [{ version: "1" }],
+      [{ version: "1", name: "drifted" }],
       [{ anon_select: false, auth_select: true, auth_insert_messages: false, svc_insert: true, svc_delete_audit: false }],
       [{ tgname: "enforce_recording_consent", tgenabled: "O" }],
       [{ proname: "is_app_admin", proconfig: ['search_path=""'] }, { proname: "enforce_recording_consent", proconfig: ['search_path=""'] }],

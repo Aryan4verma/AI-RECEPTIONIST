@@ -6,6 +6,8 @@ import type {
   AuditRepo,
   CustomerRepo,
   CustomerRow,
+  ModelProviderRepo,
+  ModelProviderRow,
   BookingStateRepo,
   BookingStateRow,
   BusinessConfigRepo,
@@ -361,5 +363,38 @@ export class MemoryBusinessConfigRepo implements BusinessConfigRepo {
   }
   async insertVersion(category: string, content: Record<string, unknown>, version: number, _updatedBy: string | null): Promise<void> {
     this.data[category] = { content, version };
+  }
+}
+
+export class MemoryModelProviderRepo implements ModelProviderRepo {
+  readonly rows: ModelProviderRow[] = [];
+  async list(): Promise<ModelProviderRow[]> {
+    return [...this.rows];
+  }
+  async findById(id: string): Promise<ModelProviderRow | null> {
+    return this.rows.find((r) => r.id === id) ?? null;
+  }
+  async create(input: {
+    kind: ModelProviderRow["kind"]; adapter: ModelProviderRow["adapter"]; displayName: string;
+    baseUrl?: string; modelId?: string; capabilities?: Record<string, unknown>;
+    credentialRef?: string; isActive?: boolean;
+  }): Promise<ModelProviderRow> {
+    const row: ModelProviderRow = {
+      id: randomUUID(),
+      kind: input.kind, adapter: input.adapter, displayName: input.displayName,
+      baseUrl: input.baseUrl ?? null, modelId: input.modelId ?? null,
+      capabilities: input.capabilities ?? {}, status: "unverified", lastError: null,
+      credentialRef: input.credentialRef ?? null, isActive: input.isActive ?? false,
+    };
+    this.rows.push(row);
+    return row;
+  }
+  async update(id: string, patch: Partial<ModelProviderRow>): Promise<void> {
+    const row = this.rows.find((r) => r.id === id);
+    if (row) Object.assign(row, patch);
+  }
+  async remove(id: string): Promise<void> {
+    const i = this.rows.findIndex((r) => r.id === id);
+    if (i >= 0) this.rows.splice(i, 1);
   }
 }

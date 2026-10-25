@@ -7,6 +7,8 @@ import type {
   AuditRepo,
   CustomerRepo,
   CustomerRow,
+  ModelProviderRepo,
+  ModelProviderRow,
   BookingStateRepo,
   BookingStateRow,
   BusinessConfigRepo,
@@ -560,4 +562,75 @@ function mapBookingState(r: Record<string, unknown>): BookingStateRow {
     lastError: (r.last_error as string | null) ?? null,
     updatedAt: new Date(r.updated_at as string),
   };
+}
+
+const PROVIDER_SELECT = `id, kind, adapter, display_name, base_url, model_id, capabilities, status, last_error, credential_ref, is_active`;
+
+function mapProvider(r: Record<string, unknown>): ModelProviderRow {
+  return {
+    id: r.id as string,
+    kind: r.kind as ModelProviderRow["kind"],
+    adapter: r.adapter as ModelProviderRow["adapter"],
+    displayName: r.display_name as string,
+    baseUrl: (r.base_url as string | null) ?? null,
+    modelId: (r.model_id as string | null) ?? null,
+    capabilities: (r.capabilities as Record<string, unknown>) ?? {},
+    status: r.status as ModelProviderRow["status"],
+    lastError: (r.last_error as string | null) ?? null,
+    credentialRef: (r.credential_ref as string | null) ?? null,
+    isActive: r.is_active as boolean,
+  };
+}
+
+export class PgModelProviderRepo implements ModelProviderRepo {
+  constructor(private readonly pool: Pool) {}
+
+  async list(): Promise<ModelProviderRow[]> {
+    const { rows } = await this.pool.query(`select ${PROVIDER_SELECT} from public.model_providers order by created_at desc`);
+    return rows.map(mapProvider);
+  }
+
+  async findById(id: string): Promise<ModelProviderRow | null> {
+    const { rows } = await this.pool.query(
+      `select ${PROVIDER_SELECT} from public.model_providers where id = $1`, [id]);
+    return rows[0] ? mapProvider(rows[0]) : null;
+  }
+
+  async create(input: {
+    kind: ModelProviderRow["kind"]; adapter: ModelProviderRow["adapter"]; displayName: string;
+    baseUrl?: string; modelId?: string; capabilities?: Record<string, unknown>;
+    credentialRef?: string; isActive?: boolean;
+  }): Promise<ModelProviderRow> {
+    const { rows } = await this.pool.query(
+      `insert into public.model_providers (kind, adapter, display_name, base_url, model_id, capabilities, credential_ref, is_active)
+       values ($1, $2, $3, $4, $5, $6, $7, $8) returning ${PROVIDER_SELECT}`,
+      [input.kind, input.adapter, input.displayName, input.baseUrl ?? null, input.modelId ?? null,
+       JSON.stringify(input.capabilities ?? {}), input.credentialRef ?? null, input.isActive ?? false]);
+    return mapProvider(rows[0]);
+  }
+
+  async update(id: string, patch: Partial<ModelProviderRow>): Promise<void> {
+    const sets: string[] = [];
+    const values: unknown[] = [id];
+    let p = 2;
+    const map: Array<[keyof ModelProviderRow, string]> = [
+      ["displayName", "display_name"], ["baseUrl", "base_url"], ["modelId", "model_id"],
+      ["capabilities", "capabilities"], ["status", "status"], ["lastError", "last_error"],
+      ["credentialRef", "credential_ref"], ["isActive", "is_active"],
+    ];
+    for (const [key, col] of map) {
+      if (patch[key] !== undefined) {
+        sets.push(`${col} = $${p}`);
+        values.push(key === "capabilities" ? JSON.stringify(patch[key]) : patch[key]);
+        p += 1;
+      }
+    }
+    if (sets.length === 0) return;
+    await this.pool.query(
+      `update public.model_providers set ${sets.join(", ")}, updated_at = now() where id = $1`, values);
+  }
+
+  async remove(id: string): Promise<void> {
+    await this.pool.query(`delete from public.model_providers where id = $1`, [id]);
+  }
 }

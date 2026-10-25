@@ -15,6 +15,9 @@ import { BookingService } from "../domain/booking/service.js";
 import { ConversationService } from "../domain/conversation/service.js";
 import { ExtractionService } from "../domain/extraction/service.js";
 import { KnowledgeService } from "../domain/knowledge/service.js";
+import { ModelRegistry } from "../ai/registry.js";
+import { MemoryModelProviderRepo } from "../db/memory/stores.js";
+import { createSecretStore } from "../secrets/store.js";
 import { buildApp } from "../server/app.js";
 
 /**
@@ -102,6 +105,11 @@ function build(intentResponses: Array<{ intent: string }> = [
     conversationService,
     bookingService,
     admin: {
+      registry: new ModelRegistry({
+        repo: new MemoryModelProviderRepo(),
+        localProvider: scriptedProvider([{ intent: "greeting" }]),
+        secretStore: createSecretStore({ kind: "disabled", reason: "fixture" }),
+      }),
       verifyAdmin: async (token) => (token === "admin-token" ? { userId: "admin-1" } : null),
       isAdminMember: async () => true,
       config,

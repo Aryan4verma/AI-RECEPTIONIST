@@ -12,6 +12,9 @@ import {
 } from "../../../db/memory/stores.js";
 import { scriptedProvider } from "../../../domain/conversation/testProvider.js";
 import { BookingService } from "../../../domain/booking/service.js";
+import { ModelRegistry } from "../../../ai/registry.js";
+import { MemoryModelProviderRepo } from "../../../db/memory/stores.js";
+import { createSecretStore } from "../../../secrets/store.js";
 import { ConversationService } from "../../../domain/conversation/service.js";
 import { buildApp } from "../../../server/app.js";
 import type { AdminRouteDeps } from "./index.js";
@@ -35,7 +38,13 @@ async function buildHarness(opts: { member?: boolean; verify?: "ok" | "fail" } =
   const bookingService = new BookingService({
     bookingState, calendar, tokenHashSecret: SECRET, offerTtlMinutes: 15,
   });
+  const registry = new ModelRegistry({
+    repo: new MemoryModelProviderRepo(),
+    localProvider: scriptedProvider([{ intent: "greeting" }]),
+    secretStore: createSecretStore({ kind: "disabled", reason: "fixture" }),
+  });
   const admin: AdminRouteDeps = {
+    registry,
     verifyAdmin: async (token) =>
       opts.verify === "fail" || token !== "admin-token"
         ? null
@@ -65,7 +74,7 @@ async function buildHarness(opts: { member?: boolean; verify?: "ok" | "fail" } =
     bookingService,
     admin,
   });
-  return { app, customers, audit, conversations, bookingService, bookingState, calendar };
+  return { app, customers, audit, conversations, bookingService, bookingState, calendar, registry };
 }
 
 const authHeaders = { authorization: "Bearer admin-token", "content-type": "application/json" };
@@ -153,6 +162,76 @@ describe("admin management APIs (TC-28 route layer)", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().messages).toHaveLength(1);
+    await app.close();
+  });
+});
+
+
+describe("AI Models & Providers admin routes (OP-14..OP-18)", () => {
+
+  it("requires authentication for local model discovery", async () => {
+    const { app } = await buildHarness();
+    const res = await app.inject({ method: "GET", url: "/api/v1/admin/models/local" });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it("discovers local models live (OP-14)", async () => {
+    const { app } = await buildHarness();
+    const res = await app.inject({ method: "GET", url: "/api/v1/admin/models/local", headers: authOnly });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ollama.models.map((m: { name: string }) => m.name)).toContain("qwen3:1.7b");
+    await app.close();
+  });
+
+  it("rejects an unsafe provider endpoint (OP-15, SEC-16)", async () => {
+    const { app } = await buildHarness();
+    const res = await app.inject({
+      method: "POST", url: "/api/v1/admin/providers", headers: authHeaders,
+      payload: { kind: "cloud", adapter: "openai_compatible", displayName: "bad", baseUrl: "https://169.254.169.254/v1" },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.code).toBe("UNSAFE_ENDPOINT");
+    await app.close();
+  });
+
+  it("credential entry fails closed while the store is disabled (OP-16)", async () => {
+    const { app } = await buildHarness();
+    const created = await app.inject({
+      method: "POST", url: "/api/v1/admin/providers", headers: authHeaders,
+      payload: { kind: "cloud", adapter: "openai_compatible", displayName: "cloud", baseUrl: "https://api.example.com" },
+    });
+    expect(created.statusCode).toBe(201);
+    const id = created.json().id;
+    const res = await app.inject({
+      method: "PUT", url: `/api/v1/admin/providers/${id}/credential`, headers: authHeaders,
+      payload: { apiKey: "sk-test" },
+    });
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error.code).toBe("CREDENTIAL_STORE_UNAVAILABLE");
+    // Provider listing shows hasCredential=false and never the key:
+    const list = await app.inject({ method: "GET", url: "/api/v1/admin/providers", headers: authOnly });
+    const row = list.json().providers.find((p: { id: string }) => p.id === id);
+    expect(row.hasCredential).toBe(false);
+    expect(JSON.stringify(list.json())).not.toContain("sk-test");
+    await app.close();
+  });
+
+  it("active-model switching validates against discovered local models (OP-18)", async () => {
+    const { app, registry } = await buildHarness();
+    const local = await registry.addProvider({ kind: "local", adapter: "ollama", displayName: "local", modelId: "qwen3:1.7b" });
+    const bad = await app.inject({
+      method: "PUT", url: "/api/v1/admin/settings/active-model", headers: authHeaders,
+      payload: { providerId: local.id, modelId: "not-installed" },
+    });
+    expect(bad.statusCode).toBe(409);
+    expect(bad.json().error.code).toBe("MODEL_UNAVAILABLE");
+    const good = await app.inject({
+      method: "PUT", url: "/api/v1/admin/settings/active-model", headers: authHeaders,
+      payload: { providerId: local.id, modelId: "qwen3:1.7b" },
+    });
+    expect(good.statusCode).toBe(200);
+    expect(good.json()).toMatchObject({ appliesFrom: "next_turn" });
     await app.close();
   });
 });

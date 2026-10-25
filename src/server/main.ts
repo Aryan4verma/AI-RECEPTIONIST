@@ -18,6 +18,9 @@ import { BookingService } from "../domain/booking/service.js";
 import { ConversationService } from "../domain/conversation/service.js";
 import { ExtractionService } from "../domain/extraction/service.js";
 import { KnowledgeService } from "../domain/knowledge/service.js";
+import { ModelRegistry } from "../ai/registry.js";
+import { PgModelProviderRepo } from "../db/pg/repos.js";
+import { secretStoreFromVerification, verifyVault } from "../secrets/vault.js";
 import { buildApp } from "./app.js";
 
 /** Initial selected local runtime model (registry/switching arrives in Stage 4). */
@@ -82,6 +85,22 @@ export async function createProductionApp(rawEnv: Record<string, string | undefi
   });
   conversationServiceRef = conversationService;
 
+  // ADR-0002 v0.2: read-only Vault verification at startup decides the store
+  // (vault-active or fail-closed disabled). Local Ollama never depends on it.
+  // Failure-safe: any verification error (including unreachable database)
+  // yields the fail-closed disabled store — composition never blocks on I/O.
+  const vaultVerification = await verifyVault(db.pgPool).catch(
+    (err): { ok: false; reasons: string[] } => ({
+      ok: false,
+      reasons: [`verification unreachable: ${err instanceof Error ? err.message : "unknown"}`],
+    }),
+  );
+  if (!vaultVerification.ok) {
+    logger.warn({ reasons: vaultVerification.reasons }, "secret store fail-closed: Vault verification failed");
+  }
+  const secretStore = secretStoreFromVerification(vaultVerification, db.pgPool);
+  const registry = new ModelRegistry({ repo: new PgModelProviderRepo(db.pgPool), localProvider: provider, secretStore });
+
   const app = await buildApp({
     env,
     logger,
@@ -90,6 +109,7 @@ export async function createProductionApp(rawEnv: Record<string, string | undefi
     conversationService,
     bookingService,
     admin: {
+      registry,
       verifyAdmin: async (token) => {
         const { data, error } = await db.supabase.auth.getUser(token);
         return error || !data?.user ? null : { userId: data.user.id };

@@ -11,6 +11,7 @@ import { createAdminGuard, requireAdmin, type AdminVerifier } from "../../../aut
 import { AppError } from "../../../server/errors.js";
 import type { BookingService } from "../../../domain/booking/service.js";
 import { registerConversationAdminRoutes } from "./conversations.js";
+import { registerModelAdminRoutes } from "./models.js";
 
 const CONFIG_CATEGORIES = [
   "business_info",
@@ -36,6 +37,7 @@ const customerPatch = z.strictObject({
 });
 
 export interface AdminRouteDeps {
+  registry: import("../../../ai/registry.js").ModelRegistry;
   verifyAdmin: AdminVerifier;
   isAdminMember: (userId: string) => Promise<boolean>;
   config: BusinessConfigRepo;
@@ -62,6 +64,7 @@ export function registerAdminRoutes(app: FastifyInstance, deps: AdminRouteDeps) 
   registerConfigRoutes(app, deps);
   registerCustomerRoutes(app, deps);
   registerConversationAdminRoutes(app, deps);
+  registerModelAdminRoutes(app, { registry: deps.registry, audit: deps.audit });
 }
 
 function registerConfigRoutes(app: FastifyInstance, deps: AdminRouteDeps) {
