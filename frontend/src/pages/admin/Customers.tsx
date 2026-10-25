@@ -136,7 +136,7 @@ function AddModal({ open, onClose, onDone, token }: { open: boolean; onClose: ()
         <Field label="Name" htmlFor="c-name"><Input id="c-name" required value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Email" htmlFor="c-email" hint="Optional"><Input id="c-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
         <Field label="Phone" htmlFor="c-phone" hint="Optional"><Input id="c-phone" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
-        <Field label="Notes" htmlFor="c-notes" hint="Optional"><Textarea id="c-notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className="font-sans" /></Field>
+        <Field label="Notes" htmlFor="c-notes" hint="Optional"><Textarea id="c-notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
         {error && <ErrorNote>{error}</ErrorNote>}
       </form>
     </Modal>

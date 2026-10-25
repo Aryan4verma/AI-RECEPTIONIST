@@ -48,7 +48,7 @@ export function CardHead({ title, sub, actions }: { title: string; sub?: string;
   return (
     <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
       <div className="min-w-0">
-        <h2 className="font-display text-[17px] leading-tight text-ink">{title}</h2>
+        <h2 className="type-h2 text-ink">{title}</h2>
         {sub && <p className="mt-0.5 text-[12.5px] text-ink-3">{sub}</p>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -117,7 +117,7 @@ export function Input({ className = "", ...rest }: InputHTMLAttributes<HTMLInput
 export function Textarea({ className = "", ...rest }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
-      className={`w-full rounded-lg border border-line-strong bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-3/70 focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-600/15 font-mono ${className}`}
+      className={`w-full rounded-lg border border-line-strong bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-3/70 focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-600/15 ${className}`}
       {...rest}
     />
   );
@@ -156,7 +156,7 @@ export function PageHeading({ title, sub, actions }: { title: string; sub?: stri
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 className="font-display text-2xl leading-tight text-ink">{title}</h1>
+        <h1 className="type-h1 text-ink">{title}</h1>
         {sub && <p className="mt-1 text-sm text-ink-2">{sub}</p>}
       </div>
       {actions}

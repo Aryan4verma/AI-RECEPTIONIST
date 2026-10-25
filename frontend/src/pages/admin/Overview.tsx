@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { adminApi, type AppointmentRow, type ConversationRow, type Customer } from "../../lib/admin";
 import { Badge, Card, CardHead, ErrorNote, Spinner } from "../../components/ui";
+import { Photo } from "../../components/Photo";
 import { formatDate, formatDateTime, relativeTime, STATUS_LABELS, statusTone } from "../../lib/format";
 import { ApiError } from "../../lib/api";
 import { IconAlert, IconArrowRight, IconCalendar, IconChat, IconChip, IconMessages, IconUsers } from "../../components/icons";
@@ -81,7 +82,7 @@ export default function Overview() {
       {/* Hero — greeting line + photographic card carrying the REAL configured greeting */}
       <div className="mb-6 grid gap-5 lg:grid-cols-[1fr_340px]">
         <div className="flex flex-col justify-center">
-          <h1 className="font-display text-[26px] leading-tight text-ink">The front desk today</h1>
+          <h1 className="type-h1 text-ink">The front desk today</h1>
           <p className="mt-1 text-sm text-ink-2">
             {formatDate(new Date().toISOString())} — everything below is live from your receptionist service.
           </p>
@@ -100,19 +101,12 @@ export default function Overview() {
             )}
           </p>
         </div>
-        <div className="relative h-36 overflow-hidden rounded-card shadow-card" aria-hidden="true">
-          <img
-            src="https://images.unsplash.com/photo-1613490493576-10f784a887da?auto=format&fit=crop&w=800&q=70"
-            alt=""
-            loading="lazy"
-            decoding="async"
-            className="h-full w-full object-cover"
-          />
+        <Photo src="/images/admin-hero.jpg" className="h-36 rounded-card shadow-card">
           <div className="absolute inset-0 bg-gradient-to-t from-pine-950/55 via-pine-950/10 to-transparent" />
           <p className="absolute bottom-3 left-4 right-4 font-display-italic text-[13px] leading-snug text-[#f4f1e8]">
             Every conversation, appointment and handoff in one place.
           </p>
-        </div>
+        </Photo>
       </div>
 
       {/* Stat cards — tinted icon tiles, serif numbers, circular arrow */}
@@ -272,10 +266,10 @@ function StatCard({
           <IconArrowRight className="size-3.5" />
         </span>
       </div>
-      <p className={`mt-3.5 font-display text-[30px] leading-none tabular ${valueClass ?? (accent ? "text-pine-700" : "text-ink")}`}>
+      <p className={`type-metric mt-3.5 text-[30px] leading-none ${valueClass ?? (accent ? "text-pine-700" : "text-ink")}`}>
         {value}
       </p>
-      <p className="micro mt-2 !text-[9.5px]">{label}</p>
+      <p className="micro mt-2">{label}</p>
       <p className="mt-1.5 text-[11.5px] text-ink-3">{hint}</p>
     </Link>
   );

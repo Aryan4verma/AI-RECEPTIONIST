@@ -68,7 +68,7 @@ export default function Call() {
             </span>
             <span className="leading-tight">
               <span className="block font-display text-[17px] font-semibold tracking-tight text-ink">Cleardesk</span>
-              <span className="block text-[10px] font-medium uppercase tracking-[0.16em] text-ink-3">Voice call</span>
+              <span className="block text-[10.5px] font-medium uppercase tracking-[0.16em] text-ink-3">Voice call</span>
             </span>
           </Link>
           <Link to="/" className="rounded-full px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-pine-50 hover:text-pine-700">
@@ -90,7 +90,7 @@ export default function Call() {
               </span>
             </div>
             <div className="max-w-md">
-              <h1 className="font-display text-3xl leading-tight text-ink sm:text-4xl">
+              <h1 className="type-display text-ink">
                 Call the <span className="font-display-italic text-pine-700">AI receptionist</span>
               </h1>
               <p className="mt-3 text-[14.5px] leading-relaxed text-ink-2">
@@ -133,7 +133,7 @@ export default function Call() {
               </span>
             </div>
             <p className="micro">Call ended · {mmss(state.durationSec)}</p>
-            <h1 className="font-display text-3xl text-ink">Thanks for calling.</h1>
+            <h1 className="type-display text-ink">Thanks for calling.</h1>
             {state.session && (
               <p className="max-w-sm text-sm leading-relaxed text-ink-2">
                 Your conversation is saved — continue it by text, or review anything the receptionist proposed.
@@ -205,9 +205,7 @@ export default function Call() {
               </div>
 
               {inCall && (
-                <p className="font-display text-3xl tabular leading-none text-ink">
-                  {mmss(state.durationSec)}
-                </p>
+                <p className="type-metric text-3xl leading-none text-ink">{mmss(state.durationSec)}</p>
               )}
             </div>
 

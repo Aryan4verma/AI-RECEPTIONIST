@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
+import { Photo } from "../../components/Photo";
 import {
   IconCalendar,
   IconChat,
@@ -48,16 +49,16 @@ export default function AdminLayout() {
           <span className="flex size-9 items-center justify-center rounded-lg bg-pine-800 font-display text-lg font-semibold text-[#f4f1e8]">
             C
           </span>
-          <span className="leading-tight">
-            <span className="block font-display text-[18px] font-semibold tracking-tight text-ink">Cleardesk</span>
-            <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-3">Console</span>
-          </span>
+            <span className="leading-tight">
+              <span className="block font-display text-[18px] font-semibold tracking-tight text-ink">Cleardesk</span>
+              <span className="block text-[10.5px] font-semibold uppercase tracking-[0.16em] text-ink-3">Console</span>
+            </span>
         </div>
 
         <nav aria-label="Console sections" className="flex-1 space-y-5 px-3">
           {NAV_GROUPS.map((group) => (
             <div key={group.title}>
-              <p className="micro px-3 pb-1.5 !text-[9.5px]">{group.title}</p>
+              <p className="micro px-3 pb-1.5">{group.title}</p>
               <div className="space-y-0.5">
                 {group.items.map((n) => (
                   <NavLink
@@ -89,19 +90,12 @@ export default function AdminLayout() {
             className="group block overflow-hidden rounded-card border border-line shadow-card transition-shadow hover:shadow-slip"
             title="See what your customers see"
           >
-            <div className="relative h-24 bg-gradient-to-br from-pine-300 to-pine-700">
-              <img
-                src="https://images.unsplash.com/photo-1519710164239-da123dc03ef4?auto=format&fit=crop&w=600&q=70"
-                alt=""
-                loading="lazy"
-                decoding="async"
-                className="h-full w-full object-cover"
-              />
+            <Photo src="/images/promo-cafe.jpg" className="h-24">
               <div className="absolute inset-0 bg-gradient-to-t from-pine-950/60 to-transparent" />
               <p className="absolute bottom-2 left-3 text-[11px] font-semibold text-[#f4f1e8]">
                 Your front desk, live
               </p>
-            </div>
+            </Photo>
             <div className="flex items-center justify-between bg-surface px-3.5 py-2.5">
               <p className="text-[12px] font-medium text-ink-2">See the customer view</p>
               <IconExternal className="size-3.5 text-ink-3 transition-colors group-hover:text-pine-700" />

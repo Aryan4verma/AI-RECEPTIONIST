@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, postAudio, ApiError, type Offer, type TurnResult } from "../../lib/api";
 import { Badge, Button, ErrorNote, Modal, Spinner, Toast } from "../../components/ui";
+import { Photo } from "../../components/Photo";
 import { formatDateTime } from "../../lib/format";
 import { IconArrowRight, IconArrowUp, IconCalendar, IconChat, IconMic, IconPhone, IconShield, IconSparkle, IconWaveform } from "../../components/icons";
 
@@ -112,7 +113,7 @@ function OfferSlip({
           <IconCalendar className="size-3.5" /> Proposed appointment
         </span>
         <span
-          className={`font-display text-[15px] tabular ${expired || mins < 3 ? "text-danger-fg" : "text-pine-700"}`}
+          className={`type-metric text-[15px] ${expired || mins < 3 ? "text-danger-fg" : "text-pine-700"}`}
           aria-label={expired ? "Offer expired" : `Offer holds for ${mins} minutes ${secs} seconds`}
         >
           {expired ? "expired" : `${mins}:${String(secs).padStart(2, "0")}`}
@@ -460,7 +461,7 @@ export default function Chat() {
                 <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
-            <p className="font-display text-2xl text-ink">Session ended</p>
+            <p className="type-display text-ink">Session ended</p>
             <p className="max-w-sm text-sm leading-relaxed text-ink-2">Thanks for chatting. Start a new conversation anytime.</p>
             <Button variant="secondary" onClick={() => { setMessages([]); setPendingOffer(null); setPhase({ kind: "idle" }); }}>
               New conversation
@@ -626,7 +627,7 @@ function Landing({ onStart, error }: { onStart: () => void; error: string | null
               <IconSparkle className="size-3.5" />
               The always-on front desk
             </p>
-            <h1 className="mt-5 font-display text-[2.55rem] font-medium leading-[1.07] tracking-[-0.01em] text-ink sm:text-[3.4rem]">
+            <h1 className="type-hero mt-5 text-ink">
               Every call answered.
               <br />
               <span className="font-display-italic font-normal text-pine-700">Every visitor greeted.</span>
@@ -658,16 +659,9 @@ function Landing({ onStart, error }: { onStart: () => void; error: string | null
 
           {/* Photographic vignette — a composed product preview, clearly labeled */}
           <div className="relative hidden lg:block" aria-hidden="true">
-            <div className="relative h-[430px] overflow-hidden rounded-[18px] bg-gradient-to-br from-pine-200 via-canvas-deep to-brass-300/50 shadow-pop">
-              <img
-                src="https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=1200&q=80"
-                alt=""
-                loading="lazy"
-                decoding="async"
-                className="h-full w-full object-cover"
-              />
+            <Photo src="/images/hero-reception.jpg" className="h-[430px] rounded-[18px] shadow-pop">
               <div className="absolute inset-0 bg-gradient-to-t from-pine-950/35 via-transparent to-transparent" />
-            </div>
+            </Photo>
 
             {/* Floating cards — both anchored to the left edge, stacked */}
             <div className="absolute -left-8 top-8 w-64 -rotate-1 rounded-card border border-line bg-surface p-4 shadow-slip">
@@ -682,7 +676,7 @@ function Landing({ onStart, error }: { onStart: () => void; error: string | null
                   I'd like to book a consultation this week
                 </div>
               </div>
-              <p className="micro mt-2.5 pl-1 !text-[9.5px]">Preview · example conversation</p>
+              <p className="micro mt-2.5 pl-1">Preview · example conversation</p>
             </div>
 
             <div className="absolute -left-5 bottom-24 w-64 rotate-1 rounded-card border border-line bg-surface p-4 shadow-slip">

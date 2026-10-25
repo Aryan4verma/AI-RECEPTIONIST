@@ -440,7 +440,7 @@ function FaqForm({ content, onChange }: { content: Record<string, unknown>; onCh
             <Input id={`fq-${i}`} value={f.question ?? ""} onChange={(e) => update(i, { question: e.target.value })} placeholder="What are your opening hours?" />
           </Field>
           <Field label="Answer (returned exactly as written)" htmlFor={`fa-${i}`}>
-            <Textarea id={`fa-${i}`} rows={2} className="font-sans" value={f.answer ?? ""} onChange={(e) => update(i, { answer: e.target.value })} placeholder="We are open Monday to Friday, 9am to 6pm." />
+            <Textarea id={`fa-${i}`} rows={2} value={f.answer ?? ""} onChange={(e) => update(i, { answer: e.target.value })} placeholder="We are open Monday to Friday, 9am to 6pm." />
           </Field>
           <Field label="Keywords" htmlFor={`fk-${i}`} hint="Comma-separated words that should match this question.">
             <Input
@@ -467,6 +467,7 @@ function JsonForm({ content, onChange, hint }: { content: Record<string, unknown
         <Textarea
           id="json-cfg"
           rows={12}
+          className="font-mono text-[13px]"
           value={text}
           onChange={(e) => {
             setText(e.target.value);
