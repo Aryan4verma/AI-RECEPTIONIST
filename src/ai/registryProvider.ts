@@ -19,6 +19,14 @@ export class RegistryBackedProvider implements LLMProvider {
     private readonly deps: {
       registry: ModelRegistry;
       makeLocal: (model: string) => LLMProvider;
+      /**
+       * Owner-controlled default (FR-15: detection is not activation): when
+       * NO provider row is active — e.g. a fresh database — inference falls
+       * back to THIS documented initial local model rather than failing.
+       * Changing it requires the admin active-model API; cloud is never
+       * activated implicitly.
+       */
+      defaultLocalModel: string;
     },
   ) {}
 
@@ -35,13 +43,8 @@ export class RegistryBackedProvider implements LLMProvider {
     request: StructuredRequest<T>,
   ): Promise<StructuredOutcome<T>> {
     const active = await this.deps.registry.resolveActive();
-    if (!active) {
-      return {
-        status: "error",
-        error: new AppError("MODEL_UNAVAILABLE", "No active model is configured.", {}),
-      };
-    }
-    if (active.kind === "cloud") {
+    const model = active?.modelId ?? this.deps.defaultLocalModel;
+    if (active?.kind === "cloud") {
       // Explicit, loud refusal — never silent cloud egress (SEC-15).
       return {
         status: "error",
@@ -52,7 +55,6 @@ export class RegistryBackedProvider implements LLMProvider {
         ),
       };
     }
-    const model = active.modelId ?? "qwen3:1.7b";
     return this.localFor(model).structured(request);
   }
 
@@ -62,8 +64,8 @@ export class RegistryBackedProvider implements LLMProvider {
 
   async healthCheck(): Promise<{ ok: boolean; error?: string }> {
     const active = await this.deps.registry.resolveActive();
-    if (!active) return { ok: false, error: "no active model" };
-    if (active.kind === "cloud") return { ok: false, error: "cloud provider active but unauthorized" };
-    return this.localFor(active.modelId ?? "qwen3:1.7b").healthCheck();
+    const model = active?.modelId ?? this.deps.defaultLocalModel;
+    if (active?.kind === "cloud") return { ok: false, error: "cloud provider active but unauthorized" };
+    return this.localFor(model).healthCheck();
   }
 }

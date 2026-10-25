@@ -85,6 +85,7 @@ export async function createProductionApp(
   const inferenceProvider = opts.overrides?.provider ?? new RegistryBackedProvider({
     registry,
     makeLocal: (model) => new OllamaProvider(env.OLLAMA_BASE_URL, model),
+    defaultLocalModel: INITIAL_LOCAL_MODEL, // documented owner-controlled default (qwen3:1.7b)
   });
   const extraction = new ExtractionService({ provider: inferenceProvider, config });
   const knowledge = new KnowledgeService(config);

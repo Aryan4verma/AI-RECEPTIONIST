@@ -28,7 +28,7 @@ function makeStack() {
     localProvider: registryLocal,
     secretStore: createSecretStore({ kind: "disabled", reason: "fixture" }),
   });
-  const backed = new RegistryBackedProvider({ registry, makeLocal: fakeLocal });
+  const backed = new RegistryBackedProvider({ registry, makeLocal: fakeLocal, defaultLocalModel: "qwen3:1.7b" });
   return { repo, registry, backed };
 }
 
@@ -68,12 +68,15 @@ describe("RegistryBackedProvider (FR-17 wiring)", () => {
     expect(health.ok).toBe(false);
   });
 
-  it("no active provider yields a typed error (no silent default guess)", async () => {
+  it("no active provider falls back to the DOCUMENTED default local model (never cloud)", async () => {
     const { backed } = makeStack();
     const outcome = await backed.structured({
       system: "s", messages: [], schema: z.object({ note: z.string() }), schemaName: "x",
       timeoutMs: 1000, maxOutputTokens: 8,
     });
-    expect(outcome).toMatchObject({ status: "error", error: { code: "MODEL_UNAVAILABLE" } });
+    expect(outcome).toMatchObject({ status: "ok" });
+    expect((outcome as { value?: { note?: string } }).value?.note).toBe("from:qwen3:1.7b");
+    const health = await backed.healthCheck();
+    expect(health.ok).toBe(true);
   });
 });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AppError } from "../server/errors.js";
+import { inferenceGate } from "../concurrency/inferenceGate.js";
 import type { DiscoveredModel, LLMProvider, StructuredOutcome, StructuredRequest } from "./types.js";
 
 const tagsResponseSchema = z.object({
@@ -57,6 +58,9 @@ export class OllamaProvider implements LLMProvider {
   }
 
   async structured<T extends z.ZodTypeAny>(request: StructuredRequest<T>): Promise<StructuredOutcome<T>> {
+    // The real LLM call holds the shared inference gate: STT and LLM work is
+    // strictly sequential process-wide (reentrant within one logical flow).
+    return inferenceGate.run(async () => {
     const messages: ChatMessage[] = [
       { role: "system", content: request.system },
       ...request.messages,
@@ -105,6 +109,7 @@ export class OllamaProvider implements LLMProvider {
       };
     }
     return { status: "ok", value: validated.data, raw };
+    });
   }
 
   async healthCheck(): Promise<{ ok: boolean; error?: string }> {

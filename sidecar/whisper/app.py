@@ -10,8 +10,10 @@ IDLE_UNLOAD_SECONDS of inactivity; requests are serialized (single worker)
 so STT never runs concurrently with anything else inside this process;
 int8 tiny keeps RSS well under 1 GB.
 """
+import io
 import json
 import threading
+from urllib.parse import parse_qs, urlparse
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -79,9 +81,19 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001 - surfaced as typed error
             self._send(500, {"error": "model_load_failed", "detail": str(exc)[:200]})
             return
+        query = parse_qs(urlparse(self.path).query)
+        max_seconds = min(float(query.get("max_seconds", ["60"])[0]), MAX_SECONDS)
         try:
             with _worker_lock:  # one transcription at a time
-                segments, _info = model.transcribe(audio, beam_size=1, vad_filter=True)
+                # faster-whisper accepts a readable BinaryIO — pass an in-memory
+                # stream (never a temp file: audio stays in process memory).
+                segments, info = model.transcribe(io.BytesIO(audio), beam_size=1, vad_filter=True)
+                # DECODED duration is authoritative for EVERY supported format
+                # (not just WAV headers): enforce it server-side post-decode.
+                if info is not None and info.duration > max_seconds:
+                    self._send(422, {"error": "audio_too_long",
+                                     "detail": f"{info.duration:.1f}s > {max_seconds:.0f}s"})
+                    return
                 transcript = " ".join(s.text.strip() for s in segments).strip()
             self._send(200, {"transcript": transcript})
         except Exception as exc:  # noqa: BLE001
@@ -92,10 +104,22 @@ class Handler(BaseHTTPRequestHandler):
             super().log_message(fmt, *args)
 
 
+def _idle_monitor():
+    """Real idle unloading: a daemon thread releases the model (and its RSS)
+    after IDLE_UNLOAD_SECONDS without a request."""
+    while True:
+        time.sleep(60)
+        try:
+            _unload_if_idle()
+        except Exception:  # noqa: BLE001 - monitoring must never crash the sidecar
+            pass
+
+
 def main():
     import os
 
     port = int(os.environ.get("WHISPER_SIDECAR_PORT", "8788"))
+    threading.Thread(target=_idle_monitor, daemon=True).start()
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     print(f"whisper-sidecar listening on 127.0.0.1:{port}", flush=True)
     try:
