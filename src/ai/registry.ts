@@ -3,6 +3,7 @@ import type { DiscoveredModel, LLMProvider } from "./types.js";
 import type { ModelProviderRepo, ModelProviderRow } from "../db/ports.js";
 import type { SecretStore } from "../secrets/store.js";
 import { validateProviderEndpoint } from "../security/endpoint.js";
+import { safeProviderFetch } from "../security/safeFetch.js";
 
 /** Admin-visible provider view — credential reference NEVER leaves the server. */
 export interface PublicProvider {
@@ -142,7 +143,8 @@ export class ModelRegistry {
     }
     const fetchFn = this.deps.fetchFn ?? fetch;
     try {
-      const res = await fetchFn(new URL("/models", existing.baseUrl), { signal: AbortSignal.timeout(10_000) });
+      // Request-time SSRF guard: DNS-resolved addresses validated per hop.
+      const res = await safeProviderFetch(new URL("/models", existing.baseUrl).toString(), { signal: AbortSignal.timeout(10_000) }, { fetchFn });
       const ok = res.ok;
       await this.deps.repo.update(id, {
         status: ok ? "ok" : "error",

@@ -1,5 +1,6 @@
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import rateLimit from "@fastify/rate-limit";
+import multipart from "@fastify/multipart";
 import type { Env } from "../config/env.js";
 import type { Logger } from "../observability/logger.js";
 import { AppError, toEnvelope } from "./errors.js";
@@ -7,12 +8,15 @@ import { ZodError } from "zod";
 import { registerHealthRoutes, type HealthDeps } from "./health.js";
 import { registerConversationRoutes, type ConversationRouteDeps } from "../http/routes/public/conversations.js";
 import { registerAdminRoutes, type AdminRouteDeps } from "../http/routes/admin/index.js";
+import { registerAudioRoutes, type AudioRouteDeps } from "../http/routes/public/audio.js";
 
 export interface AppDeps extends HealthDeps, ConversationRouteDeps {
   env: Env;
   logger: Logger;
   /** Present in production composition; tests may omit admin routes. */
   admin?: AdminRouteDeps;
+  /** Present when speech is enabled; audio routes register only then. */
+  audio?: AudioRouteDeps;
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -23,6 +27,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     genReqId: () => crypto.randomUUID(),
   });
 
+  await app.register(multipart);
   await app.register(rateLimit, {
     max: 60,
     timeWindow: "1 minute",
@@ -71,6 +76,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerHealthRoutes(app, deps);
   registerConversationRoutes(app, deps);
   if (deps.admin) registerAdminRoutes(app, deps.admin);
+  if (deps.audio) registerAudioRoutes(app, deps.audio);
 
   return app;
 }

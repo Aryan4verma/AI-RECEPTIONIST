@@ -67,7 +67,37 @@ function scriptedDualProvider(intentSeq, extractionSeq) {
   };
 }
 
-const futureIso = "2026-11-05T15:00:00+02:00"; // Berlin-aware absolute timestamp
+// Dynamic future dates (never stale): ~30 days out, correct Europe/Berlin
+// offset computed for THAT date (CET +01:00 in November — never a stale +02:00).
+function berlinIso(daysAhead, wallHour) {
+  const target = new Date(Date.now() + daysAhead * 24 * 3600 * 1000);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Berlin", hour12: false, year: "numeric", month: "2-digit",
+    day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(target.setUTCHours(12, 0, 0, 0) || target);
+  const p = (t) => parts.find((x) => x.type === t)?.value ?? "00";
+  const naive = Date.UTC(Number(p("year")), Number(p("month")) - 1, Number(p("day")), wallHour, 0, 0);
+  const off = (function computeOffset(guessMs) {
+    let guess = guessMs;
+    for (let i = 0; i < 2; i++) {
+      const pp = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Europe/Berlin", hour12: false, year: "numeric", month: "2-digit",
+        day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+      }).formatToParts(new Date(guess));
+      const g = (t) => Number(pp.find((x) => x.type === t)?.value ?? 0);
+      guess = guessMs - (Date.UTC(g("year"), g("month") - 1, g("day"), g("hour") % 24, g("minute"), g("second")) - guess);
+    }
+    return (guessMs - guess) / 60000;
+  })(naive);
+  const sign = off >= 0 ? "+" : "-";
+  const aoff = Math.abs(off);
+  const hh = String(Math.floor(aoff / 60)).padStart(2, "0");
+  const mm = String(aoff % 60).padStart(2, "0");
+  const d = new Date(naive);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}T${String(wallHour).padStart(2, "0")}:00:00${sign}${hh}:${mm}`;
+}
+const futureIso = berlinIso(30, 15); // conv A: 15:00 local, ~30 days out
+const futureIsoB = berlinIso(31, 10); // conv B: 10:00 local the next day
 
 async function main() {
   // ---------- Phase 0: preflight + local-target guard (BEFORE any write) ----------
@@ -85,16 +115,43 @@ async function main() {
     fail(0, `ABORT — effective target is NOT the isolated local stack (client=${clientHost}, server=${addr}, db=${target.rows[0].name})`);
   }
   log(0, `target verified LOCAL: client=127.0.0.1 -> server=${addr} (private/Docker), db=postgres`);
-  const replay = await db.pgPool.query("select count(*)::int as n from supabase_migrations.schema_migrations");
-  if (replay.rows[0].n !== 6) fail(0, `migration replay count = ${replay.rows[0].n}, expected 6`);
-  log(0, `migration replay verified: ${replay.rows[0].n}/6 applied locally`);
+  // Dedicated-environment proof (stronger than a private IP): the migration
+  // history must match OUR committed six-file stream EXACTLY, and all
+  // application tables must be EMPTY (a foreign local project fails here).
+  const replay = await db.pgPool.query("select version, name from supabase_migrations.schema_migrations order by version");
+  const expected = [
+    ["20261024000001", "extensions_private_schema"], ["20261024000002", "core_tables"],
+    ["20261024000003", "booking_and_calendar"], ["20261024000004", "ai_providers"],
+    ["20261024000005", "consent_and_records"], ["20261024000006", "rls_policies_grants"],
+  ];
+  const got = replay.rows.map((r) => [r.version, r.name]);
+  if (JSON.stringify(got) !== JSON.stringify(expected)) {
+    await db.close();
+    fail(0, `ABORT — migration history does not match the TC-65 stream exactly: ${JSON.stringify(got)}`);
+  }
+  const occupied = await db.pgPool.query(`select
+      (select count(*)::int from public.customers) c,
+      (select count(*)::int from public.conversations) v,
+      (select count(*)::int from public.appointments) a,
+      (select count(*)::int from public.business_config) b`);
+  const o = occupied.rows[0];
+  if (o.c + o.v + o.a + o.b !== 0) {
+    await db.close();
+    fail(0, `ABORT — environment is not the dedicated empty TC-65 database (rows present: ${JSON.stringify(o)})`);
+  }
+  log(0, `dedicated TC-65 environment proven: exact 6-migration stream, all application tables empty`);
 
   // ---------- Phase 1: seed synthetic business configuration (local only) ----------
-  // Idempotent reruns: clear any leftovers from a previously failed run.
-  await db.pgPool.query("delete from public.appointments");
-  await db.pgPool.query("delete from public.conversations");
+  // Idempotent reruns: clear ONLY test-owned rows (marker-scoped — never a
+  // blanket delete; a foreign row in any table is left untouched).
+  await db.pgPool.query(`delete from public.appointments where conversation_id in (
+      select c.id from public.conversations c
+      join public.customers cu on cu.id = c.customer_id
+      where cu.display_name like 'e2e-test%')`);
+  await db.pgPool.query(`delete from public.conversations where customer_id in (
+      select id from public.customers where display_name like 'e2e-test%')`);
   await db.pgPool.query("delete from public.customers where display_name like 'e2e-test%'");
-  await db.pgPool.query("delete from public.business_config where version = 1");
+  await db.pgPool.query("delete from public.business_config where content->>'__tc65__' = 'true'");
   await db.pgPool.query(
     `insert into public.business_config (category, content, version) values
       ('business_info', $1::jsonb, 1),
@@ -102,10 +159,10 @@ async function main() {
       ('appointment_types', $3::jsonb, 1),
       ('faqs', $4::jsonb, 1)`,
     [
-      JSON.stringify({ greeting: "Welcome to TC65 Clinic! How can I help you today?" }),
-      JSON.stringify({ timezone: "Europe/Berlin" }),
-      JSON.stringify({ default_duration_minutes: 45 }),
-      JSON.stringify({ entries: [{ question: "What are your opening hours?", answer: "We are open Monday to Friday, 9am to 6pm.", keywords: ["opening", "hours", "open"] }] }),
+      JSON.stringify({ __tc65__: true, greeting: "Welcome to TC65 Clinic! How can I help you today?" }),
+      JSON.stringify({ __tc65__: true, timezone: "Europe/Berlin" }),
+      JSON.stringify({ __tc65__: true, default_duration_minutes: 45 }),
+      JSON.stringify({ __tc65__: true, entries: [{ question: "What are your opening hours?", answer: "We are open Monday to Friday, 9am to 6pm.", keywords: ["opening", "hours", "open"] }] }),
     ],
   );
   log(1, "seeded 4 synthetic business_config rows (version 1, local only)");
@@ -132,7 +189,7 @@ async function main() {
         customer_name: { state: "known", value: "e2e-test customer Ravi" },
         contact: { state: "known", value: "ravi-e2e@example.com" },
         purpose: { state: "known", value: "e2e-test follow-up" },
-        requested_time: { state: "known", value: "2026-11-06T10:00:00+01:00" },
+        requested_time: { state: "known", value: "${futureIsoB}" },
         duration_minutes: { state: "known", value: 30 },
         meeting_type: { state: "known", value: "online" },
       },
@@ -201,9 +258,18 @@ async function main() {
      where a.conversation_id = $1`, [convA]);
   const row = linkage.rows[0];
   if (!row) fail(4, "no linked appointment row");
+  const createdCustomerIds = [row.customer_id];
+  const linkageB = await db.pgPool.query(
+    `select cust.id from public.customers cust where cust.display_name like 'e2e-test customer Ravi%' limit 1`);
+  if (linkageB.rows[0]) createdCustomerIds.push(linkageB.rows[0].id);
   if (row.status !== "confirmed" || row.google_event_id !== eventId) fail(4, `appointment: ${row.status}/${row.google_event_id}`);
   if (row.conv_customer !== row.customer_id) fail(4, "conversation.customer_id does not match appointment.customer_id");
   if (row.duration_minutes !== 45 || row.timezone !== "Europe/Berlin") fail(4, `duration/tz: ${row.duration_minutes}/${row.timezone}`);
+  // Local-time preservation: the stored UTC instant must render as 15:00 in
+  // Europe/Berlin (the customer's intended wall-clock, correctly offset).
+  const scheduledA = await db.pgPool.query("select scheduled_start from public.appointments where conversation_id = $1", [convA]);
+  const wallA = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Berlin", hour12: false, hour: "2-digit", minute: "2-digit" }).format(new Date(scheduledA.rows[0].scheduled_start));
+  if (wallA !== "15:00") fail(4, `intended 15:00 Berlin wall-clock not preserved: rendered ${wallA}`);
   if (!row.display_name.startsWith("e2e-test")) fail(4, `customer marker missing: ${row.display_name}`);
   const msgs = await db.pgPool.query("select count(*)::int as n from public.messages where conversation_id = $1", [convA]);
   if (msgs.rows[0].n < 8) fail(4, `expected ≥8 persisted messages, got ${msgs.rows[0].n}`);
@@ -219,7 +285,7 @@ async function main() {
   const tokenB = startedB.body.accessToken;
   // Conversation B supplies every detail in one turn -> the offer comes back
   // from THIS turn (a further turn would correctly hit awaiting-confirmation).
-  const tB = await post(`/api/v1/conversations/${convB}/messages`, { text: `e2e-test customer Ravi — follow-up on 2026-11-06T10:00:00+01:00, online, 30 minutes, ravi-e2e@example.com` }, tokenB);
+  const tB = await post(`/api/v1/conversations/${convB}/messages`, { text: `e2e-test customer Ravi — follow-up on ${futureIsoB}, online, 30 minutes, ravi-e2e@example.com` }, tokenB);
   const bOffer = tB.body.offer;
   if (!bOffer) fail(5, `no offer for B: ${JSON.stringify(tB.body).slice(0, 200)}`);
   calendar.faults = { createTimeoutAfterSend: true }; // provider loses the create response
@@ -270,10 +336,11 @@ async function main() {
 
   // ---------- Phase 7: row cleanup (FK order) + verification ----------
   const auditBefore = await db.pgPool.query("select count(*)::int as n from public.audit_log");
+  // Scoped to rows created by THIS run (exact ids) plus marker-scoped config.
   await db.pgPool.query("delete from public.appointments where conversation_id = any($1)", [[convA, convB]]);
   await db.pgPool.query("delete from public.conversations where id = any($1)", [[convA, convB]]); // cascades messages + booking_state
-  await db.pgPool.query("delete from public.customers where display_name like 'e2e-test%'");
-  await db.pgPool.query("delete from public.business_config where version = 1");
+  await db.pgPool.query("delete from public.customers where id = any($1)", [createdCustomerIds]);
+  await db.pgPool.query("delete from public.business_config where content->>'__tc65__' = 'true'");
   const leftovers = await db.pgPool.query(
     `select
        (select count(*)::int from public.customers) as customers,

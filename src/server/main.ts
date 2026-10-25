@@ -21,8 +21,11 @@ import { ConversationService } from "../domain/conversation/service.js";
 import { ExtractionService } from "../domain/extraction/service.js";
 import { KnowledgeService } from "../domain/knowledge/service.js";
 import { ModelRegistry } from "../ai/registry.js";
+import { RegistryBackedProvider } from "../ai/registryProvider.js";
 import { PgModelProviderRepo } from "../db/pg/repos.js";
 import { secretStoreFromVerification, verifyVault } from "../secrets/vault.js";
+import { SidecarLifecycle, SidecarSpeechToText } from "../speech/sidecar.js";
+import { resolve } from "node:path";
 import { buildApp } from "./app.js";
 
 /** Initial selected local runtime model (registry/switching arrives in Stage 4). */
@@ -60,7 +63,30 @@ export async function createProductionApp(
   const customers = new PgCustomerRepo(db.pgPool);
   const conversations = new PgConversationRepo(db.pgPool);
   const provider = opts.overrides?.provider ?? new OllamaProvider(env.OLLAMA_BASE_URL, INITIAL_LOCAL_MODEL);
-  const extraction = new ExtractionService({ provider, config });
+
+  // ADR-0002 v0.2: read-only Vault verification at startup decides the store
+  // (vault-active or fail-closed disabled). Local Ollama never depends on it.
+  // Failure-safe: any verification error (including unreachable database)
+  // yields the fail-closed disabled store — composition never blocks on I/O.
+  const vaultVerification = await verifyVault(db.pgPool).catch(
+    (err): { ok: false; reasons: string[] } => ({
+      ok: false,
+      reasons: [`verification unreachable: ${err instanceof Error ? err.message : "unknown"}`],
+    }),
+  );
+  if (!vaultVerification.ok) {
+    logger.warn({ reasons: vaultVerification.reasons }, "secret store fail-closed: Vault verification failed");
+  }
+  const secretStore = secretStoreFromVerification(vaultVerification, db.pgPool);
+  const registry = new ModelRegistry({ repo: new PgModelProviderRepo(db.pgPool), localProvider: provider, secretStore });
+
+  // Inference wiring (FR-17): conversation/extraction inference runs through
+  // the registry — an admin model switch applies on the next inference.
+  const inferenceProvider = opts.overrides?.provider ?? new RegistryBackedProvider({
+    registry,
+    makeLocal: (model) => new OllamaProvider(env.OLLAMA_BASE_URL, model),
+  });
+  const extraction = new ExtractionService({ provider: inferenceProvider, config });
   const knowledge = new KnowledgeService(config);
 
   // The escalation hook resolves lazily — the booking service is constructed
@@ -81,7 +107,7 @@ export async function createProductionApp(
     consent: new PgConsentRepo(db.pgPool),
     audit,
     config,
-    provider,
+    provider: inferenceProvider,
     tokenHashSecret: env.TOKEN_HASH_SECRET,
     extraction,
     knowledge,
@@ -90,21 +116,15 @@ export async function createProductionApp(
   });
   conversationServiceRef = conversationService;
 
-  // ADR-0002 v0.2: read-only Vault verification at startup decides the store
-  // (vault-active or fail-closed disabled). Local Ollama never depends on it.
-  // Failure-safe: any verification error (including unreachable database)
-  // yields the fail-closed disabled store — composition never blocks on I/O.
-  const vaultVerification = await verifyVault(db.pgPool).catch(
-    (err): { ok: false; reasons: string[] } => ({
-      ok: false,
-      reasons: [`verification unreachable: ${err instanceof Error ? err.message : "unknown"}`],
-    }),
-  );
-  if (!vaultVerification.ok) {
-    logger.warn({ reasons: vaultVerification.reasons }, "secret store fail-closed: Vault verification failed");
-  }
-  const secretStore = secretStoreFromVerification(vaultVerification, db.pgPool);
-  const registry = new ModelRegistry({ repo: new PgModelProviderRepo(db.pgPool), localProvider: provider, secretStore });
+  // Speech sidecar (ADR-0005): on-demand lifecycle with a RAM admission
+  // check; STT holds the shared inference gate (sequential with the LLM).
+  const sidecar = new SidecarLifecycle({
+    port: env.WHISPER_SIDECAR_PORT,
+    pythonCmd: process.platform === "win32" ? "python" : "python3",
+    appPath: resolve("sidecar/whisper/app.py"),
+    minFreeBytes: 1_200_000_000, // 1.2 GB admission floor for tiny-int8
+  });
+  const speech = new SidecarSpeechToText({ baseUrl: sidecar.baseUrl, timeoutMs: env.MAX_AUDIO_SECONDS * 1000 + 10_000 });
 
   const app = await buildApp({
     env,
@@ -113,6 +133,19 @@ export async function createProductionApp(
     ollamaBase: env.OLLAMA_BASE_URL,
     conversationService,
     bookingService,
+    audio: {
+      conversationService,
+      speech: {
+        transcribe: async (audio, maxSeconds) => {
+          await sidecar.ensureStarted();
+          return speech.transcribe(audio, maxSeconds);
+        },
+        healthCheck: () => speech.healthCheck(),
+        stop: () => sidecar.stop(),
+      },
+      maxAudioBytes: env.MAX_AUDIO_MB * 1024 * 1024,
+      maxAudioSeconds: env.MAX_AUDIO_SECONDS,
+    },
     admin: {
       registry,
       verifyAdmin: async (token) => {
@@ -139,6 +172,7 @@ export async function createProductionApp(
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "shutting down");
     await app.close();
+    await sidecar.stop();
     await db.close();
   };
 
