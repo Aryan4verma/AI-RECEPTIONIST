@@ -29,26 +29,26 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   await app.register(multipart);
   await app.register(rateLimit, {
+    global: true,
     max: 60,
     timeWindow: "1 minute",
-    errorResponseBuilder: (_req, ctx) => ({
-      error: {
-        code: "RATE_LIMITED",
-        message: `Rate limit exceeded, retry in ${ctx.after}`,
-      },
-    }),
   });
 
   app.setErrorHandler((rawErr, request, reply) => {
     // Route-level Zod validation failures are client errors (400 INVALID_INPUT)
     // with server-only details — never 500, never echoed payload text.
-    const err = rawErr instanceof ZodError
+    let err = rawErr instanceof ZodError
       ? new AppError(
           "INVALID_INPUT",
           "Invalid request payload.",
           { issues: rawErr.issues.map((i) => `${i.path.join(".")}: ${i.message}`) },
         )
       : rawErr;
+    // Rate-limit rejections arrive as framework errors — remap to the typed
+    // envelope with the correct 429 (never a re-wrapped 500).
+    if (!(err instanceof AppError) && (err as { statusCode?: unknown }).statusCode === 429) {
+      err = new AppError("RATE_LIMITED", "Too many requests — please retry shortly.");
+    }
     const envelope = toEnvelope(err, request.id);
     const rawStatus = (err as { statusCode?: unknown }).statusCode;
     // AppError carries its canonical HTTP status; framework errors carry

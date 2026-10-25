@@ -28,11 +28,30 @@ export function registerAudioRoutes(app: FastifyInstance, deps: AudioRouteDeps) 
       throw new AppError("INVALID_INPUT", "Conversation has ended.");
     }
 
-    const file = await request.file({
-      limits: { fileSize: deps.maxAudioBytes, files: 1 },
-    });
+    let file;
+    try {
+      file = await request.file({
+        limits: { fileSize: deps.maxAudioBytes, files: 1 },
+      });
+    } catch (err) {
+      // Multipart-level size enforcement surfaces as our typed envelope.
+      const code = (err as { code?: string }).code;
+      if (code === "FST_PART_FILE_TOO_LARGE" || code === "FST_REQ_FILE_TOO_LARGE" || /file (size|too large)/i.test(err instanceof Error ? err.message : "")) {
+        throw new AppError("AUDIO_TOO_LARGE", "The audio file exceeds the size limit.");
+      }
+      throw err;
+    }
     if (!file) throw new AppError("UNSUPPORTED_MEDIA_TYPE", "An audio file is required.");
-    const buffer = await file.toBuffer();
+    let buffer;
+    try {
+      buffer = await file.toBuffer();
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === "FST_PART_FILE_TOO_LARGE" || code === "FST_REQ_FILE_TOO_LARGE" || /file (size|too large)/i.test(err instanceof Error ? err.message : "")) {
+        throw new AppError("AUDIO_TOO_LARGE", "The audio file exceeds the size limit.");
+      }
+      throw err;
+    }
     const kind = validateAudio(new Uint8Array(buffer), {
       maxBytes: deps.maxAudioBytes,
       maxSeconds: deps.maxAudioSeconds,
