@@ -36,9 +36,11 @@ const envSchema = z.object({
         return false;
       }
     }, "expected the session-pooler host (*.pooler.supabase.com) per the approved connection mode"),
-  // TLS verification is mandatory (fail-closed): path to the Supabase CA
-  // certificate downloaded from the dashboard by the owner. Never committed.
+  // TLS verification is mandatory in production (fail-closed): path to the
+  // Supabase CA certificate downloaded from the dashboard. Never committed.
+  // (Optional only in the strictly-loopback test mode below.)
   SUPABASE_DB_CA_CERT_PATH: z.string().min(1, "required — TLS verification must not be disabled"),
+
   TOKEN_HASH_SECRET: z.string().min(32),
   // Optional secrets normalize BLANK values to undefined — an unfilled
   // .env line must never fail startup (final runtime check 2). Fail-closed
@@ -53,7 +55,36 @@ const envSchema = z.object({
   GOOGLE_OAUTH_REDIRECT_URI: z.string().optional(),
 });
 
-export type Env = z.infer<typeof envSchema>;
+const localEnvSchema = envSchema.extend({
+  SUPABASE_URL: z.string().url(),
+  SUPABASE_DB_URL: z
+    .string()
+    .refine((v) => v.startsWith("postgresql://") || v.startsWith("postgres://"), "must be a postgres connection string")
+    .refine((v) => {
+      try {
+        return ["127.0.0.1", "localhost", "[::1]", "::1"].includes(new URL(v).hostname);
+      } catch {
+        return false;
+      }
+    }, "local test mode requires a LOOPBACK database address (isolation guard)"),
+  // Blank/absent CA is allowed ONLY in loopback test mode; createDbClients
+  // then connects without TLS to the local container.
+  SUPABASE_DB_CA_CERT_PATH: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().optional(),
+  ),
+});
+
+/**
+ * Test-only local-database mode (TC-65): the DB URL must be a LOOPBACK
+ * postgres address (isolation guard — a test config can never point at the
+ * shared project), TLS/CA becomes optional, and SUPABASE_URL may be any URL.
+ * Production (no opts) keeps the strict pooler-hostname + mandatory-CA
+ * validation unchanged — this mode cannot weaken it.
+ */
+export interface EnvOptions {
+  localDatabase?: boolean;
+}
 
 export class ConfigValidationError extends Error {
   constructor(public readonly issues: string[]) {
@@ -62,8 +93,12 @@ export class ConfigValidationError extends Error {
   }
 }
 
-export function loadEnv(source: Record<string, string | undefined> = process.env): Env {
-  const parsed = envSchema.safeParse(source);
+export function loadEnv(
+  source: Record<string, string | undefined> = process.env,
+  opts: EnvOptions = {},
+): Env {
+  const schema = opts.localDatabase ? localEnvSchema : envSchema;
+  const parsed = schema.safeParse(source);
   if (!parsed.success) {
     throw new ConfigValidationError(
       parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
@@ -76,3 +111,6 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
   }
   return parsed.data;
 }
+
+// Widest runtime shape; production strictness is enforced at parse time.
+export type Env = z.infer<typeof localEnvSchema>;

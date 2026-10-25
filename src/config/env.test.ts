@@ -51,3 +51,29 @@ describe("env validation", () => {
     }
   });
 });
+
+describe("local-database test mode (TC-65 isolation)", () => {
+  const localEnv = {
+    ...baseEnv,
+    SUPABASE_DB_URL: "postgresql://postgres:postgres@127.0.0.1:54330/postgres",
+    SUPABASE_DB_CA_CERT_PATH: "",
+  };
+
+  it("accepts a strictly loopback database URL without a CA (test mode only)", () => {
+    const env = loadEnv(localEnv, { localDatabase: true });
+    expect(env.SUPABASE_DB_CA_CERT_PATH).toBeUndefined();
+  });
+
+  it("isolation guard: rejects a NON-loopback database URL even in test mode", () => {
+    expect(() =>
+      loadEnv({ ...localEnv, SUPABASE_DB_URL: "postgresql://postgres.proj:pw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres" }, { localDatabase: true }),
+    ).toThrow(/LOOPBACK/);
+  });
+
+  it("production mode still rejects the local URL and requires the CA (no weakening)", () => {
+    expect(() => loadEnv(localEnv)).toThrow(ConfigValidationError); // not a pooler host
+    const noCa = { ...baseEnv };
+    delete (noCa as Record<string, string | undefined>).SUPABASE_DB_CA_CERT_PATH;
+    expect(() => loadEnv(noCa)).toThrow(/SUPABASE_DB_CA_CERT_PATH/);
+  });
+});

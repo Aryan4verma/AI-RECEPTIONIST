@@ -8,3 +8,5 @@ coverage/
 sidecar/whisper/.venv/
 sidecar/whisper/__pycache__/
 supabase/.temp/
+supabase/.branches/
+.supabase/

@@ -36,16 +36,24 @@ export function createDbClients(env: Env): DbClients {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const ca = loadCaCert(env.SUPABASE_DB_CA_CERT_PATH);
+  // Production always supplies a CA (verified-full TLS). Only the strictly
+  // loopback test mode may omit it — no TLS to a local container.
   const dbUrl = new URL(env.SUPABASE_DB_URL);
+  const ssl = env.SUPABASE_DB_CA_CERT_PATH
+    ? {
+        ca: loadCaCert(env.SUPABASE_DB_CA_CERT_PATH),
+        rejectUnauthorized: true, // verify-full: certificate validation is mandatory
+        servername: dbUrl.hostname, // SNI must match the host being verified
+      }
+    : dbUrl.hostname === "127.0.0.1" || dbUrl.hostname === "localhost" || dbUrl.hostname === "[::1]"
+      ? false // local test mode only (loopback guard enforced in env schema)
+      : (() => {
+          throw new Error("SUPABASE_DB_CA_CERT_PATH is required for non-loopback databases.");
+        })();
   const pgPool = new Pool({
     connectionString: env.SUPABASE_DB_URL,
     max: 3,
-    ssl: {
-      ca,
-      rejectUnauthorized: true, // verify-full: certificate validation is mandatory
-      servername: dbUrl.hostname, // SNI must match the pooler host being verified
-    },
+    ssl,
     application_name: "ai-receptionist-backend",
   });
 

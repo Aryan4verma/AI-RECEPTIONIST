@@ -13,6 +13,8 @@ import {
   PgCustomerRepo,
 } from "../db/pg/repos.js";
 import { MockCalendarAdapter } from "../calendar/mockAdapter.js";
+import type { CalendarProvider } from "../calendar/types.js";
+import type { LLMProvider } from "../ai/types.js";
 import { OllamaProvider } from "../ai/ollamaProvider.js";
 import { BookingService } from "../domain/booking/service.js";
 import { ConversationService } from "../domain/conversation/service.js";
@@ -44,8 +46,11 @@ export interface ProductionApp {
  * escalation hook. Building performs no network I/O (clients are lazy), so
  * the exact composition is testable without credentials.
  */
-export async function createProductionApp(rawEnv: Record<string, string | undefined>): Promise<ProductionApp> {
-  const env = loadEnv(rawEnv);
+export async function createProductionApp(
+  rawEnv: Record<string, string | undefined>,
+  opts: { localDatabase?: boolean; overrides?: { provider?: LLMProvider; calendar?: CalendarProvider } } = {},
+): Promise<ProductionApp> {
+  const env = loadEnv(rawEnv, opts.localDatabase ? { localDatabase: true } : undefined);
   const logger = createLogger(env);
   const db = createDbClients(env);
 
@@ -54,7 +59,7 @@ export async function createProductionApp(rawEnv: Record<string, string | undefi
   const bookingState = new PgBookingStateRepo(db.pgPool);
   const customers = new PgCustomerRepo(db.pgPool);
   const conversations = new PgConversationRepo(db.pgPool);
-  const provider = new OllamaProvider(env.OLLAMA_BASE_URL, INITIAL_LOCAL_MODEL);
+  const provider = opts.overrides?.provider ?? new OllamaProvider(env.OLLAMA_BASE_URL, INITIAL_LOCAL_MODEL);
   const extraction = new ExtractionService({ provider, config });
   const knowledge = new KnowledgeService(config);
 
@@ -63,7 +68,7 @@ export async function createProductionApp(rawEnv: Record<string, string | undefi
   let conversationServiceRef: ConversationService | undefined;
   const bookingService = new BookingService({
     bookingState,
-    calendar: new MockCalendarAdapter(),
+    calendar: opts.overrides?.calendar ?? new MockCalendarAdapter(),
     tokenHashSecret: env.TOKEN_HASH_SECRET,
     offerTtlMinutes: 15,
     audit,
