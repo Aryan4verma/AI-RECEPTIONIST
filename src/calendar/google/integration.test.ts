@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { GoogleIntegrationService, GoogleNotConnectedError } from "./integration.js";
 import { GOOGLE_CALENDAR_SCOPES, GOOGLE_REVOKE_ENDPOINT, GOOGLE_TOKEN_ENDPOINT } from "./oauth.js";
-import { MemoryAuditRepo, MemoryBusinessConfigRepo } from "../../db/memory/stores.js";
+import { MemoryAuditRepo } from "../../db/memory/stores.js";
+import { MemoryGoogleIntegrationStore } from "./store.js";
 import { createSecretStore } from "../../secrets/store.js";
 import { AppError } from "../../server/errors.js";
 
@@ -30,7 +31,7 @@ interface DepsOpts {
 }
 
 function makeDeps(opts: DepsOpts = {}) {
-  const config = new MemoryBusinessConfigRepo();
+  const store = new MemoryGoogleIntegrationStore();
   const audit = new MemoryAuditRepo();
   const stored: Array<{ id: string; secret: string }> = [];
   const secretStore =
@@ -68,7 +69,7 @@ function makeDeps(opts: DepsOpts = {}) {
     return jsonResponse(500, {});
   }) as typeof fetch;
   const service = new GoogleIntegrationService({
-    config,
+    store,
     secretStore,
     audit,
     creds: {
@@ -80,7 +81,7 @@ function makeDeps(opts: DepsOpts = {}) {
     fetchFn,
     now: () => 1_000_000,
   });
-  return { service, config, audit, stored, calls };
+  return { service, store, audit, stored, calls };
 }
 
 async function connectThrough(service: GoogleIntegrationService): Promise<string> {
@@ -103,17 +104,19 @@ describe("GoogleIntegrationService", () => {
   });
 
   it("completes the callback: verifies the calendar is writable, stores the refresh token ONLY in the secret store", async () => {
-    const { service, config, stored, calls } = makeDeps();
+    const { service, store, stored, calls } = makeDeps();
     const state = await connectThrough(service);
-    const result = await service.handleCallback({ code: "auth-code", state }, "admin-1");
-    expect(result).toEqual({ connected: true, calendarId: "test-cal@group.calendar.google.com", accessRole: "owner" });
+    const result = await service.handleCallback({ code: "auth-code", state });
+    expect(result).toEqual({ connected: true, calendarId: "test-cal@group.calendar.google.com", accessRole: "owner", connectedBy: "admin-1" });
     expect(stored).toHaveLength(1);
     expect(stored[0]?.secret).toBe("rt-1");
     // Persisted state carries only the opaque ref — never token material.
-    const persisted = JSON.stringify((await config.latest("google_calendar_integration"))?.content);
+    const persisted = JSON.stringify(store.record);
     expect(persisted).not.toContain("rt-1");
     expect(persisted).not.toContain("at-1");
-    expect(persisted).toContain('"credentialRef":"vault-1"');
+    expect(store.record?.credentialRef).toBe("vault-1");
+    // The initiating admin identity is bound into the record (UUID FK, not free text).
+    expect(store.record?.connectedBy).toBe("admin-1");
     // The code exchange hit Google's FIXED token endpoint.
     expect(calls.some((c) => c.url === GOOGLE_TOKEN_ENDPOINT)).toBe(true);
   });
@@ -121,41 +124,41 @@ describe("GoogleIntegrationService", () => {
   it("rejects state replay (single use), forged states and expired states", async () => {
     const { service } = makeDeps();
     const state = await connectThrough(service);
-    await service.handleCallback({ code: "c1", state }, null);
-    await expect(service.handleCallback({ code: "c2", state }, null)).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(service.handleCallback({ code: "c", state: "forged" }, null)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await service.handleCallback({ code: "c1", state });
+    await expect(service.handleCallback({ code: "c2", state })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(service.handleCallback({ code: "c", state: "forged" })).rejects.toMatchObject({ code: "FORBIDDEN" });
 
     const { service: svc2 } = makeDeps();
     const s2 = await connectThrough(svc2);
     // Expire the nonce: ttl is 10 minutes from the fixed clock.
-    (svc2 as unknown as { pendingStates: Map<string, number> }).pendingStates.set(s2, 999_999);
-    await expect(svc2.handleCallback({ code: "c", state: s2 }, null)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    (svc2 as unknown as { pendingStates: Map<string, { expiresAtMs: number; adminUserId: string }> }).pendingStates.set(s2, { expiresAtMs: 999_999, adminUserId: "admin-1" });
+    await expect(svc2.handleCallback({ code: "c", state: s2 })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("rejects the connection when the calendar is not writable — and revokes the issued token", async () => {
-    const { service, config, calls } = makeDeps({ calendarListRole: "reader" });
+    const { service, store, calls } = makeDeps({ calendarListRole: "reader" });
     const state = await connectThrough(service);
-    await expect(service.handleCallback({ code: "c", state }, null)).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect((await config.latest("google_calendar_integration"))?.content?.["connected"]).toBeUndefined();
+    await expect(service.handleCallback({ code: "c", state })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(store.record?.["connected"]).toBeUndefined();
     expect(calls.some((c) => c.url === GOOGLE_REVOKE_ENDPOINT)).toBe(true);
   });
 
   it("fails the connect flow closed when credential storage is disabled", async () => {
-    const { service, config } = makeDeps({ secretState: "disabled" });
+    const { service, store } = makeDeps({ secretState: "disabled" });
     const state = await connectThrough(service);
-    await expect(service.handleCallback({ code: "c", state }, null)).rejects.toMatchObject({ code: "CREDENTIAL_STORE_UNAVAILABLE" });
-    expect((await config.latest("google_calendar_integration"))?.content?.["connected"]).toBeUndefined();
+    await expect(service.handleCallback({ code: "c", state })).rejects.toMatchObject({ code: "CREDENTIAL_STORE_UNAVAILABLE" });
+    expect(store.record?.["connected"]).toBeUndefined();
   });
 
   it("caches access tokens and re-stores rotated refresh tokens", async () => {
-    const { service, stored, config } = makeDeps({
+    const { service, stored, store } = makeDeps({
       tokenResponses: [
         { status: 200, body: { access_token: "at-exchange", expires_in: 3600, refresh_token: "rt-original" } },
         { status: 200, body: { access_token: "at-refreshed", expires_in: 3600, refresh_token: "rt-rotated" } },
       ],
     });
     const state = await connectThrough(service);
-    await service.handleCallback({ code: "c", state }, null);
+    await service.handleCallback({ code: "c", state });
     expect(stored).toHaveLength(1);
     expect(stored[0]?.secret).toBe("rt-original");
     service.invalidateAccessToken(); // the callback cached at-exchange — force refresh
@@ -164,38 +167,37 @@ describe("GoogleIntegrationService", () => {
     // Rotation: the new refresh token was stored and the state ref re-pointed.
     expect(stored).toHaveLength(2);
     expect(stored[1]?.secret).toBe("rt-rotated");
-    const persisted = (await config.latest("google_calendar_integration"))?.content as Record<string, unknown>;
-    expect(persisted?.["credentialRef"]).toBe(stored[1]?.id);
+    expect(store.record?.credentialRef).toBe(stored[1]?.id);
+    // Rotation preserves the original connecting admin identity.
+    expect(store.record?.connectedBy).toBe("admin-1");
   });
 
   it("marks the integration disconnected when Google rejects the refresh (revoked access)", async () => {
-    const { service, config, audit, stored } = makeDeps({
+    const { service, store, audit, stored } = makeDeps({
       tokenResponses: [
         { status: 200, body: { access_token: "at-exchange", expires_in: 3600, refresh_token: "rt-original" } },
         { status: 400, body: { error: "invalid_grant" } },
       ],
     });
     const state = await connectThrough(service);
-    await service.handleCallback({ code: "c", state }, null);
+    await service.handleCallback({ code: "c", state });
     service.invalidateAccessToken(); // force the next call to refresh
     await expect(service.getAccessToken()).rejects.toBeInstanceOf(GoogleNotConnectedError);
-    const s = (await config.latest("google_calendar_integration"))?.content as Record<string, unknown>;
-    expect(s?.["connected"]).toBe(false);
-    expect(String(s?.["lastError"])).toContain("revoked");
+    expect(store.record?.connected).toBe(false);
+    expect(String(store.record?.lastError)).toContain("revoked");
     expect(audit.entries.some((e) => e.action === "google_calendar.access_revoked")).toBe(true);
     void stored;
   });
 
   it("disconnect revokes at Google, deletes the stored secret, and clears state", async () => {
-    const { service, config, stored, calls } = makeDeps();
+    const { service, store, stored, calls } = makeDeps();
     const state = await connectThrough(service);
-    await service.handleCallback({ code: "c", state }, null);
+    await service.handleCallback({ code: "c", state });
     expect(stored).toHaveLength(1);
     await service.disconnect("admin-1");
     expect(stored).toHaveLength(0);
-    const s = (await config.latest("google_calendar_integration"))?.content as Record<string, unknown>;
-    expect(s?.["connected"]).toBe(false);
-    expect(s?.["credentialRef"]).toBeNull();
+    expect(store.record?.connected).toBe(false);
+    expect(store.record?.credentialRef).toBeNull();
     expect(calls.some((c) => c.url === GOOGLE_REVOKE_ENDPOINT)).toBe(true);
   });
 
@@ -203,7 +205,7 @@ describe("GoogleIntegrationService", () => {
     const { service } = makeDeps();
     expect(await service.status()).toMatchObject({ configured: true, connected: false });
     const state = await connectThrough(service);
-    await service.handleCallback({ code: "c", state }, null);
+    await service.handleCallback({ code: "c", state });
     const s = await service.status();
     expect(s).toMatchObject({ configured: true, connected: true, calendarId: "test-cal@group.calendar.google.com", accessRole: "owner" });
     expect(JSON.stringify(s)).not.toContain("rt-");
@@ -211,10 +213,47 @@ describe("GoogleIntegrationService", () => {
   });
 
   it("reports a Google consent error parameter as an AppError without storing anything", async () => {
-    const { service, config, stored } = makeDeps();
+    const { service, store, stored } = makeDeps();
     const state = await connectThrough(service);
-    await expect(service.handleCallback({ state, error: "access_denied" }, null)).rejects.toBeInstanceOf(AppError);
+    await expect(service.handleCallback({ state, error: "access_denied" })).rejects.toBeInstanceOf(AppError);
     expect(stored).toHaveLength(0);
-    expect((await config.latest("google_calendar_integration"))?.content?.["connected"]).toBeUndefined();
+    expect(store.record?.["connected"]).toBeUndefined();
+  });
+});
+
+describe("corrective review: fail-closed credentials", () => {
+  it("a consent response WITHOUT a refresh token is refused — nothing stored, token revoked", async () => {
+    const { service, store, stored, calls } = makeDeps({
+      tokenResponses: [{ status: 200, body: { access_token: "at-only", expires_in: 3600 } }],
+    });
+    const state = await connectThrough(service);
+    await expect(service.handleCallback({ code: "c", state })).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    expect(stored).toHaveLength(0);
+    expect(store.record?.["connected"]).toBeUndefined();
+    const { GOOGLE_REVOKE_ENDPOINT } = await import("./oauth.js");
+    expect(calls.some((c) => c.url === GOOGLE_REVOKE_ENDPOINT)).toBe(true);
+  });
+
+  it("a persistence failure after the secret was stored leaves NO orphaned credential", async () => {
+    const { service, store, stored, calls } = makeDeps();
+    store.saveError = new Error("storage not provisioned");
+    const state = await connectThrough(service);
+    await expect(service.handleCallback({ code: "c", state })).rejects.toThrow("storage not provisioned");
+    // The Vault secret was removed and the refresh token revoked.
+    expect(stored).toHaveLength(0);
+    const { GOOGLE_REVOKE_ENDPOINT } = await import("./oauth.js");
+    expect(calls.some((c) => c.url === GOOGLE_REVOKE_ENDPOINT)).toBe(true);
+    expect(store.record).toBeNull();
+  });
+
+  it("a blank stored refresh token fails closed as not-connected", async () => {
+    const { service, store, stored } = makeDeps();
+    const state = await connectThrough(service);
+    await service.handleCallback({ code: "c", state });
+    // Simulate a blanked secret in the store.
+    stored[0]!.secret = "";
+    service.invalidateAccessToken();
+    await expect(service.getAccessToken()).rejects.toBeInstanceOf(GoogleNotConnectedError);
+    expect(store.record?.connected).toBe(false);
   });
 });

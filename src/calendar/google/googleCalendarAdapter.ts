@@ -13,6 +13,19 @@ const CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3";
 const ABSENCE_SETTLE_MS = 1_000;
 
 /**
+ * Deterministic Google event ID for an idempotency key. Google requires
+ * client-assigned IDs to use base32hex characters only — lowercase a-v and
+ * digits 0-9, length 5-1024 (RFC 2938 §3.1.3) — hyphens and w-z are INVALID.
+ * Scheme: prefix "c1" + the lowercased key stripped of every character
+ * outside [0-9a-v]. For the BookingService's randomUUID() keys this is
+ * injective (32 hex chars survive) and pure/stable across restarts.
+ */
+export function googleEventIdFor(idempotencyKey: string): string {
+  const id = `c1${idempotencyKey.toLowerCase().replace(/[^0-9a-v]/g, "")}`.slice(0, 1024);
+  return id.padEnd(5, "0");
+}
+
+/**
  * GoogleCalendarAdapter (Stage 7, Q3-gated). Implements CalendarProvider
  * against one dedicated, pre-verified calendar through the owner's OAuth
  * connection. ADR-0004 v0.2 honesty contract per method:
@@ -43,10 +56,9 @@ export class GoogleCalendarAdapter implements CalendarProvider {
     },
   ) {}
 
-  /** Google event IDs: [a-z0-9_-]{5,1024}. UUID keys are already conformant. */
+  /** Google event IDs: base32hex [a-v0-9]{5,1024} — see googleEventIdFor. */
   private eventIdFor(idempotencyKey: string): string {
-    const id = `cleardesk-${idempotencyKey.toLowerCase().replace(/[^a-z0-9_-]/g, "-")}`;
-    return id.slice(0, 1024);
+    return googleEventIdFor(idempotencyKey);
   }
 
   private async request(
@@ -103,13 +115,37 @@ export class GoogleCalendarAdapter implements CalendarProvider {
       "read",
     ).catch((err: unknown) => wrapUnavailable(err));
     if (status !== 200) throw new AppError("CALENDAR_UNAVAILABLE", "Google FreeBusy query failed.", { status }, false);
-    const calendars = (body as { calendars?: Record<string, { busy?: BusyInterval[] }> } | null)?.calendars;
-    const intervals = calendars?.[this.deps.calendarId]?.busy ?? [];
-    return {
-      busy: intervals
-        .filter((b) => typeof b?.start === "string" && typeof b?.end === "string")
-        .map((b) => ({ start: b.start, end: b.end })),
-    };
+    // Never treat an API anomaly as an empty calendar: a missing entry, a
+    // per-calendar error, or malformed intervals are all availability
+    // failures (SEC-7 — the caller keeps the recoverable state).
+    const calendars = (body as { calendars?: Record<string, { busy?: unknown; errors?: unknown }> } | null)?.calendars;
+    if (!calendars || typeof calendars !== "object") {
+      throw new AppError("CALENDAR_UNAVAILABLE", "FreeBusy response did not include any calendar availability.");
+    }
+    const entry = calendars[this.deps.calendarId];
+    if (!entry || typeof entry !== "object") {
+      throw new AppError("CALENDAR_UNAVAILABLE", "FreeBusy response omitted the dedicated calendar.");
+    }
+    if (Array.isArray(entry.errors) && entry.errors.length > 0) {
+      throw new AppError("CALENDAR_UNAVAILABLE", "Google reported an availability error for the dedicated calendar.");
+    }
+    if (!Array.isArray(entry.busy)) {
+      throw new AppError("CALENDAR_UNAVAILABLE", "FreeBusy response had malformed availability data.");
+    }
+    const intervals: BusyInterval[] = [];
+    for (const raw of entry.busy) {
+      const b = raw as { start?: unknown; end?: unknown };
+      if (typeof b?.start !== "string" || typeof b?.end !== "string") {
+        throw new AppError("CALENDAR_UNAVAILABLE", "FreeBusy response had malformed busy intervals.");
+      }
+      const start = Date.parse(b.start);
+      const end = Date.parse(b.end);
+      if (Number.isNaN(start) || Number.isNaN(end) || end < start) {
+        throw new AppError("CALENDAR_UNAVAILABLE", "FreeBusy response had unparseable busy intervals.");
+      }
+      intervals.push({ start: b.start, end: b.end });
+    }
+    return { busy: intervals };
   }
 
   async createEvent(draft: CalendarEventDraft): Promise<CreateOutcome> {

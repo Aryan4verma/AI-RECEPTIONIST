@@ -27,9 +27,8 @@ export function registerGoogleIntegrationRoutes(app: FastifyInstance, deps: { go
   app.get("/api/v1/admin/integrations/google/callback", async (request, reply) => {
     if (!deps.googleIntegration) throw new AppError("CALENDAR_UNAVAILABLE", "Google Calendar integration is not configured.");
     const { code, state, error } = request.query as { code?: string; state?: string; error?: string };
-    const adminHint = `oauth-callback:${new Date().toISOString()}`;
     try {
-      await deps.googleIntegration.handleCallback({ code, state, error }, adminHint);
+      await deps.googleIntegration.handleCallback({ code, state, error });
     } catch (err) {
       const message = err instanceof AppError ? err.message : "Google Calendar connection failed.";
       reply.code(400);

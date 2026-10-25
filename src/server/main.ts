@@ -15,6 +15,7 @@ import {
 import { MockCalendarAdapter } from "../calendar/mockAdapter.js";
 import { GoogleCalendarAdapter } from "../calendar/google/googleCalendarAdapter.js";
 import { GoogleIntegrationService } from "../calendar/google/integration.js";
+import { PgGoogleIntegrationStore } from "../calendar/google/store.js";
 import type { CalendarProvider } from "../calendar/types.js";
 import type { LLMProvider } from "../ai/types.js";
 import { OllamaProvider } from "../ai/ollamaProvider.js";
@@ -101,7 +102,10 @@ export async function createProductionApp(
   let calendar: CalendarProvider = opts.overrides?.calendar ?? new MockCalendarAdapter();
   if (env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET && env.GOOGLE_OAUTH_REDIRECT_URI && env.GOOGLE_CALENDAR_ID) {
     googleIntegration = new GoogleIntegrationService({
-      config,
+      // Isolated persistence (migration-0007 table). Until the owner approves
+      // the DDL, every store operation fails honestly and status reports the
+      // pending migration — the mock calendar remains active.
+      store: new PgGoogleIntegrationStore(db.pgPool),
       secretStore,
       audit,
       creds: {

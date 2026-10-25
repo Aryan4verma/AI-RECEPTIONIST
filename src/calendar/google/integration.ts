@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AuditRepo, BusinessConfigRepo } from "../../db/ports.js";
+import type { AuditRepo } from "../../db/ports.js";
 import { AppError } from "../../server/errors.js";
 import type { SecretStore } from "../../secrets/store.js";
 import {
@@ -9,8 +9,12 @@ import {
   revokeToken,
   STATE_TTL_MS,
 } from "./oauth.js";
+import {
+  EMPTY_RECORD,
+  type GoogleIntegrationRecord,
+  type GoogleIntegrationStore,
+} from "./store.js";
 
-const STATE_CATEGORY = "google_calendar_integration";
 const SECRET_NAMESPACE = "google-calendar";
 /** Clock skew guard on cached access tokens. */
 const TOKEN_EXPIRY_SKEW_MS = 60_000;
@@ -23,33 +27,6 @@ export interface GoogleIntegrationConfig {
   calendarId: string;
 }
 
-/** Persisted (non-secret) connection state — business_config, never tokens. */
-interface IntegrationState {
-  connected: boolean;
-  calendarId: string;
-  /** Opaque Vault reference for the refresh token — never the token itself. */
-  credentialRef: string | null;
-  connectedBy: string | null;
-  connectedAt: string | null;
-  accessRole: string | null;
-  lastError: string | null;
-  lastVerifiedAt: string | null;
-}
-
-/** business_config content is Record<string, unknown> — index-compatible shape. */
-type StateContent = IntegrationState & Record<string, unknown>;
-
-const EMPTY_STATE: IntegrationState = {
-  connected: false,
-  calendarId: "",
-  credentialRef: null,
-  connectedBy: null,
-  connectedAt: null,
-  accessRole: null,
-  lastError: null,
-  lastVerifiedAt: null,
-};
-
 export class GoogleNotConnectedError extends Error {
   constructor(message = "Google Calendar is not connected") {
     super(message);
@@ -61,23 +38,39 @@ interface CallbackResult {
   connected: true;
   calendarId: string;
   accessRole: string;
+  connectedBy: string;
+}
+
+interface PendingState {
+  expiresAtMs: number;
+  /** The authenticated admin who initiated connect — bound into the record. */
+  adminUserId: string;
 }
 
 /**
- * Owner-only Google Calendar connection lifecycle. Refresh tokens live ONLY
- * in the approved SecretStore (Vault; fail-closed disabled store refuses the
- * connect flow — CREDENTIAL_STORE_UNAVAILABLE). Everything else persists as
- * non-secret JSON in business_config (existing table — no DDL, migration
- * 0007 gate untouched).
+ * Owner-only Google Calendar connection lifecycle (Stage 7, corrective
+ * review). Refresh tokens live ONLY in the approved SecretStore (Vault;
+ * fail-closed disabled store refuses the connect flow). State persists
+ * through the isolated GoogleIntegrationStore (migration-0007 table — no
+ * DDL from application code; the store fails honestly until approved).
+ *
+ * Security properties:
+ * - CSRF: single-use 10-minute state nonces, each BOUND to the
+ *   authenticated admin UUID that initiated connect; the callback persists
+ *   that identity, never free text.
+ * - Fail-closed tokens: a consent response without a refresh token aborts
+ *   the connection (nothing stored, token revoked).
+ * - No orphaned credentials: a persistence failure after the secret was
+ *   stored removes the secret and revokes the token before rethrowing.
  */
 export class GoogleIntegrationService {
   private cachedAccessToken: { token: string; expiresAtMs: number } | null = null;
-  /** Single-use CSRF nonces: state → expiresAtMs. Server-memory only. */
-  private readonly pendingStates = new Map<string, number>();
+  /** Single-use CSRF nonces: state → expiry + initiating admin. */
+  private readonly pendingStates = new Map<string, PendingState>();
 
   constructor(
     private readonly deps: {
-      config: BusinessConfigRepo;
+      store: GoogleIntegrationStore;
       secretStore: SecretStore;
       audit: AuditRepo;
       creds: GoogleIntegrationConfig;
@@ -86,28 +79,18 @@ export class GoogleIntegrationService {
     },
   ) {}
 
-  private async readState(): Promise<IntegrationState> {
-    const latest = await this.deps.config.latest(STATE_CATEGORY);
-    return latest ? { ...EMPTY_STATE, ...(latest.content as Partial<IntegrationState>) } as IntegrationState : EMPTY_STATE;
-  }
-
-  private async writeState(state: IntegrationState, updatedBy: string | null): Promise<void> {
-    const current = await this.deps.config.latest(STATE_CATEGORY);
-    const content: StateContent = { ...state };
-    await this.deps.config.insertVersion(STATE_CATEGORY, content, (current?.version ?? 0) + 1, updatedBy);
-  }
-
   isConfigured(): boolean {
     return Boolean(this.deps.creds.clientId && this.deps.creds.clientSecret && this.deps.creds.redirectUri && this.deps.creds.calendarId);
   }
 
-  /** Step 1 of connect: issue an authorization URL with a fresh CSRF state. */
+  /** Step 1 of connect: issue an authorization URL with a fresh CSRF state
+   *  bound to the authenticated admin. */
   async beginConnect(adminUserId: string): Promise<{ authUrl: string }> {
     this.assertConfigured();
     const state = randomUUID();
-    this.pendingStates.set(state, this.now() + STATE_TTL_MS);
+    this.pendingStates.set(state, { expiresAtMs: this.now() + STATE_TTL_MS, adminUserId });
     // Bound memory: drop expired nonces opportunistically.
-    for (const [k, exp] of this.pendingStates) if (exp < this.now()) this.pendingStates.delete(k);
+    for (const [k, p] of this.pendingStates) if (p.expiresAtMs < this.now()) this.pendingStates.delete(k);
     const authUrl = buildAuthUrl({
       clientId: this.deps.creds.clientId,
       redirectUri: this.deps.creds.redirectUri,
@@ -122,20 +105,22 @@ export class GoogleIntegrationService {
 
   /**
    * Step 2: the redirect target. Authenticates via the single-use state
-   * nonce (the browser carries no admin bearer header here). Verifies the
-   * dedicated calendar exists AND is writable before storing anything.
+   * nonce and its bound admin identity (the browser carries no admin
+   * bearer header here). Verifies the dedicated calendar exists AND is
+   * writable BEFORE persisting credentials.
    */
-  async handleCallback(params: { code?: string; state?: string; error?: string }, adminHint: string | null): Promise<CallbackResult> {
+  async handleCallback(params: { code?: string; state?: string; error?: string }): Promise<CallbackResult> {
     this.assertConfigured();
     const { code, state, error } = params;
-    if (error) throw new AppError("INVALID_INPUT", `Google authorization failed: consent was not granted.`);
+    if (error) throw new AppError("INVALID_INPUT", "Google authorization failed: consent was not granted.");
     if (!code || !state) throw new AppError("INVALID_INPUT", "Malformed OAuth callback.");
-    const expiresAt = this.pendingStates.get(state);
-    if (expiresAt === undefined || expiresAt < this.now()) {
+    const pending = this.pendingStates.get(state);
+    if (!pending || pending.expiresAtMs < this.now()) {
       this.pendingStates.delete(state);
       throw new AppError("FORBIDDEN", "Unknown or expired OAuth state — start the connection again.");
     }
     this.pendingStates.delete(state); // single use — replays are rejected
+    const adminUserId = pending.adminUserId;
 
     const tokens = await exchangeCode({
       clientId: this.deps.creds.clientId,
@@ -145,6 +130,13 @@ export class GoogleIntegrationService {
       fetchFn: this.deps.fetchFn,
     });
 
+    // Fail-closed: without a refresh token the connection cannot survive
+    // access-token expiry — store nothing, revoke, and ask for reconnect.
+    if (!tokens.refreshToken) {
+      await revokeToken(tokens.accessToken, this.deps.fetchFn);
+      throw new AppError("INVALID_INPUT", "Google did not return a refresh token — the connection was refused. Reconnect and ensure consent is granted.");
+    }
+
     // Verify the dedicated calendar BEFORE persisting credentials.
     const calendarInfo = await this.fetchCalendarMeta(tokens.accessToken).catch((err) => {
       throw new AppError("CALENDAR_UNAVAILABLE", "Connected to Google, but the dedicated calendar could not be verified.", {
@@ -152,73 +144,91 @@ export class GoogleIntegrationService {
       });
     });
     if (!["owner", "writer"].includes(calendarInfo.accessRole)) {
-      await revokeToken(tokens.refreshToken ?? tokens.accessToken, this.deps.fetchFn);
+      await revokeToken(tokens.refreshToken, this.deps.fetchFn);
       throw new AppError("FORBIDDEN", "The configured calendar is not writable with this Google account (access role: reader).");
     }
 
-    // Fail-closed credential storage: a disabled store refuses the whole connect.
-    const stored = await this.deps.secretStore.put(SECRET_NAMESPACE, tokens.refreshToken ?? "");
+    // Fail-closed credential storage + no orphaned secrets: if persistence
+    // fails after the secret was stored, remove it and revoke the token.
     const connectedAt = new Date(this.now()).toISOString();
-    await this.writeState(
-      {
-        ...EMPTY_STATE,
+    let ref: string | null = null;
+    try {
+      const stored = await this.deps.secretStore.put(SECRET_NAMESPACE, tokens.refreshToken);
+      ref = stored.ref;
+      await this.deps.store.save({
+        ...EMPTY_RECORD,
         connected: true,
         calendarId: this.deps.creds.calendarId,
-        credentialRef: stored.ref,
-        connectedBy: adminHint,
+        credentialRef: ref,
+        connectedBy: adminUserId,
         connectedAt,
         accessRole: calendarInfo.accessRole,
         lastVerifiedAt: connectedAt,
         lastError: null,
-      },
-      adminHint,
-    );
+      });
+    } catch (err) {
+      if (ref) await this.deps.secretStore.remove(ref).catch(() => undefined);
+      await revokeToken(tokens.refreshToken, this.deps.fetchFn);
+      throw err;
+    }
     this.cachedAccessToken = { token: tokens.accessToken, expiresAtMs: this.now() + tokens.expiresInSec * 1000 - TOKEN_EXPIRY_SKEW_MS };
     await this.deps.audit.append({
-      actorType: "admin", actorId: adminHint, action: "google_calendar.connected",
+      actorType: "admin", actorId: adminUserId, action: "google_calendar.connected",
       entityType: "integration", entityId: "google_calendar",
       detail: { calendarId: this.deps.creds.calendarId, accessRole: calendarInfo.accessRole },
     });
-    return { connected: true, calendarId: this.deps.creds.calendarId, accessRole: calendarInfo.accessRole };
+    return { connected: true, calendarId: this.deps.creds.calendarId, accessRole: calendarInfo.accessRole, connectedBy: adminUserId };
   }
 
   async status(): Promise<
-    { configured: boolean; connected: false; calendarId: string | null; accessRole: null; connectedAt: null; connectedBy: null; lastError: string | null; lastVerifiedAt: null }
-    | { configured: boolean; connected: true; calendarId: string; accessRole: string; connectedAt: string; connectedBy: string | null; lastError: string | null; lastVerifiedAt: string | null }
+    { configured: boolean; connected: false; calendarId: null; accessRole: null; connectedAt: null; connectedBy: null; lastError: string | null; lastVerifiedAt: null; storeAvailable: boolean }
+    | { configured: boolean; connected: true; calendarId: string; accessRole: string; connectedAt: string; connectedBy: string | null; lastError: string | null; lastVerifiedAt: string; storeAvailable: true }
   > {
     if (!this.isConfigured()) {
-      return { configured: false, connected: false, calendarId: null, accessRole: null, connectedAt: null, connectedBy: null, lastError: null, lastVerifiedAt: null };
+      return { configured: false, connected: false, calendarId: null, accessRole: null, connectedAt: null, connectedBy: null, lastError: null, lastVerifiedAt: null, storeAvailable: false };
     }
-    const s = await this.readState();
-    if (!s.connected) {
-      return { configured: true, connected: false, calendarId: null, accessRole: null, connectedAt: null, connectedBy: null, lastError: s.lastError, lastVerifiedAt: null };
+    let record: GoogleIntegrationRecord;
+    try {
+      record = (await this.deps.store.load()) ?? EMPTY_RECORD;
+    } catch {
+      // Honest degraded status — storage not yet provisioned (0007 pending).
+      return { configured: true, connected: false, calendarId: null, accessRole: null, connectedAt: null, connectedBy: null, lastError: "integration storage unavailable (migration 0007 pending approval)", lastVerifiedAt: null, storeAvailable: false };
+    }
+    if (!record.connected) {
+      return { configured: true, connected: false, calendarId: null, accessRole: null, connectedAt: null, connectedBy: null, lastError: record.lastError, lastVerifiedAt: null, storeAvailable: true };
     }
     return {
       configured: true,
       connected: true,
-      calendarId: s.calendarId,
-      accessRole: s.accessRole ?? "unknown",
-      connectedAt: s.connectedAt ?? "",
-      connectedBy: s.connectedBy,
-      lastError: s.lastError,
-      lastVerifiedAt: s.lastVerifiedAt ?? "",
+      calendarId: record.calendarId,
+      accessRole: record.accessRole ?? "unknown",
+      connectedAt: record.connectedAt ?? "",
+      connectedBy: record.connectedBy,
+      lastError: record.lastError,
+      lastVerifiedAt: record.lastVerifiedAt ?? "",
+      storeAvailable: true,
     };
   }
 
   /** Disconnect: revoke at Google (best effort), delete the Vault secret, clear state. */
   async disconnect(adminUserId: string): Promise<{ disconnected: true }> {
-    const s = await this.readState();
-    if (s.connected && s.credentialRef) {
+    let record: GoogleIntegrationRecord = EMPTY_RECORD;
+    try {
+      record = (await this.deps.store.load()) ?? EMPTY_RECORD;
+    } catch {
+      /* storage unavailable — still clear cached token and report */
+    }
+    if (record.connected && record.credentialRef) {
       try {
-        const refreshToken = await this.deps.secretStore.get(s.credentialRef);
+        const refreshToken = await this.deps.secretStore.get(record.credentialRef);
         await revokeToken(refreshToken, this.deps.fetchFn);
       } catch {
         /* revoke is best-effort; local removal proceeds regardless */
       }
-      await this.deps.secretStore.remove(s.credentialRef).catch(() => undefined);
+      await this.deps.secretStore.remove(record.credentialRef).catch(() => undefined);
     }
     this.cachedAccessToken = null;
-    await this.writeState({ ...EMPTY_STATE, calendarId: this.deps.creds.calendarId, lastError: s.lastError }, adminUserId);
+    await this.deps.store.save({ ...EMPTY_RECORD, calendarId: this.deps.creds.calendarId, lastError: record.lastError, connectedBy: record.connectedBy });
     await this.deps.audit.append({
       actorType: "admin", actorId: adminUserId, action: "google_calendar.disconnected",
       entityType: "integration", entityId: "google_calendar", detail: {},
@@ -228,16 +238,23 @@ export class GoogleIntegrationService {
 
   /**
    * Refresh-token lifecycle: cached in memory until near expiry, then
-   * refreshed from the Vault-stored refresh token. A rotated refresh token is
-   * re-stored. `invalid_grant` marks the integration disconnected (revoked
-   * access) — every subsequent operation fails honestly as not-connected.
+   * refreshed from the Vault-stored refresh token. A rotated refresh token
+   * is re-stored (identity preserved). `invalid_grant` marks the
+   * integration disconnected (revoked access) — every subsequent operation
+   * fails honestly as not-connected.
    */
   async getAccessToken(): Promise<string> {
     const now = this.now();
     if (this.cachedAccessToken && this.cachedAccessToken.expiresAtMs > now) return this.cachedAccessToken.token;
-    const s = await this.readState();
-    if (!s.connected || !s.credentialRef) throw new GoogleNotConnectedError();
-    const refreshToken = await this.deps.secretStore.get(s.credentialRef);
+    const record = await this.deps.store.load();
+    if (!record?.connected || !record.credentialRef) throw new GoogleNotConnectedError();
+    const refreshToken = await this.deps.secretStore.get(record.credentialRef);
+    if (!refreshToken) {
+      // Fail closed: an empty/missing secret can never be used as a token.
+      await this.deps.store.save({ ...record, connected: false, lastError: "stored credential is missing or empty — reconnect required" });
+      this.cachedAccessToken = null;
+      throw new GoogleNotConnectedError("stored Google credential is missing — reconnect in the admin console");
+    }
     let tokens;
     try {
       tokens = await refreshAccessToken({
@@ -248,7 +265,7 @@ export class GoogleIntegrationService {
       });
     } catch (err) {
       if ((err as { revoked?: boolean }).revoked) {
-        await this.writeState({ ...s, connected: false, lastError: "Google revoked access (invalid_grant) — reconnect required" }, null);
+        await this.deps.store.save({ ...record, connected: false, lastError: "Google revoked access (invalid_grant) — reconnect required" });
         this.cachedAccessToken = null;
         await this.deps.audit.append({
           actorType: "system", actorId: null, action: "google_calendar.access_revoked",
@@ -261,8 +278,9 @@ export class GoogleIntegrationService {
       });
     }
     if (tokens.refreshToken && tokens.refreshToken !== refreshToken) {
+      // Rotation: store the replacement; the initiating identity is preserved.
       const stored = await this.deps.secretStore.put(SECRET_NAMESPACE, tokens.refreshToken);
-      await this.writeState({ ...s, credentialRef: stored.ref }, null);
+      await this.deps.store.save({ ...record, credentialRef: stored.ref });
     }
     this.cachedAccessToken = { token: tokens.accessToken, expiresAtMs: now + tokens.expiresInSec * 1000 - TOKEN_EXPIRY_SKEW_MS };
     return tokens.accessToken;

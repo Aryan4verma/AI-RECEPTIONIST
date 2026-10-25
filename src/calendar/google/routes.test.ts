@@ -3,7 +3,8 @@ import Fastify from "fastify";
 import { registerGoogleIntegrationRoutes } from "../../http/routes/admin/integrations.js";
 import { createAdminGuard } from "../../auth/adminGuard.js";
 import { GoogleIntegrationService } from "./integration.js";
-import { MemoryAuditRepo, MemoryBusinessConfigRepo } from "../../db/memory/stores.js";
+import { MemoryAuditRepo } from "../../db/memory/stores.js";
+import { MemoryGoogleIntegrationStore } from "./store.js";
 import { createSecretStore } from "../../secrets/store.js";
 
 /**
@@ -19,7 +20,7 @@ function jsonResponse(status: number, body: unknown): Response {
 async function buildApp() {
   const app = Fastify();
   const integration = new GoogleIntegrationService({
-    config: new MemoryBusinessConfigRepo(),
+    store: new MemoryGoogleIntegrationStore(),
     secretStore: createSecretStore(
       { kind: "vault", verify: async () => ({ ok: true }) },
       { create: async () => "v0", decrypt: async () => "rt", delete: async () => undefined },

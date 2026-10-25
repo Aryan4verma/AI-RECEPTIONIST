@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { GoogleCalendarAdapter } from "./googleCalendarAdapter.js";
+import { GoogleCalendarAdapter, googleEventIdFor } from "./googleCalendarAdapter.js";
 import { GoogleIntegrationService, GoogleNotConnectedError } from "./integration.js";
 import { GOOGLE_TOKEN_ENDPOINT } from "./oauth.js";
-import { MemoryAuditRepo, MemoryBusinessConfigRepo } from "../../db/memory/stores.js";
+import { MemoryAuditRepo } from "../../db/memory/stores.js";
+import { MemoryGoogleIntegrationStore } from "./store.js";
 import { createSecretStore } from "../../secrets/store.js";
 import type { CalendarProvider } from "../types.js";
 
@@ -27,7 +28,7 @@ interface Route {
 }
 
 function makeAdapter(routes: Route[], opts: { dropNetwork?: boolean } = {}) {
-  const config = new MemoryBusinessConfigRepo();
+  const store = new MemoryGoogleIntegrationStore();
   const audit = new MemoryAuditRepo();
   const stored: Array<{ id: string; secret: string }> = [];
   const secretStore = createSecretStore(
@@ -67,7 +68,7 @@ function makeAdapter(routes: Route[], opts: { dropNetwork?: boolean } = {}) {
     return jsonResponse(500, { error: "unscripted" });
   }) as typeof fetch;
   const integration = new GoogleIntegrationService({
-    config,
+    store,
     secretStore,
     audit,
     creds: { clientId: "cid", clientSecret: "csec", redirectUri: "http://localhost:8787/api/v1/admin/integrations/google/callback", calendarId: "cal@test" },
@@ -78,9 +79,9 @@ function makeAdapter(routes: Route[], opts: { dropNetwork?: boolean } = {}) {
   const connect = async () => {
     const { authUrl } = await integration.beginConnect("a");
     const state = new URL(authUrl).searchParams.get("state") as string;
-    await integration.handleCallback({ code: "c", state }, null);
+    await integration.handleCallback({ code: "c", state });
   };
-  return { adapter, integration, connect, routes, audit, config };
+  return { adapter, integration, connect, routes, audit, store };
 }
 
 const draft = {
@@ -119,16 +120,16 @@ describe("GoogleCalendarAdapter", () => {
       },
       {
         match: (u) => {
-          if (u.includes("/events/cleardesk-")) getCalls.push(u);
-          return u.includes("/events/cleardesk-");
+          if (u.includes("/events/c1")) getCalls.push(u);
+          return u.includes("/events/c1");
         },
-        respond: (_init: RequestInit) => jsonResponse(200, { id: "cleardesk-9f1d2a4b-1234-4abc-8def-001122334455" }),
+        respond: (_init: RequestInit) => jsonResponse(200, { id: "c19f1d2a4b12344abc8def001122334455" }),
       },
     ]);
     await connect();
     const first = await adapter.createEvent(draft);
     const second = await adapter.createEvent(draft);
-    expect(first).toEqual({ status: "created", eventId: "cleardesk-9f1d2a4b-1234-4abc-8def-001122334455" });
+    expect(first).toEqual({ status: "created", eventId: "c19f1d2a4b12344abc8def001122334455" });
     expect(second).toEqual(first);
     expect(getCalls.length).toBeGreaterThanOrEqual(2);
   });
@@ -157,15 +158,15 @@ describe("GoogleCalendarAdapter", () => {
 
   it("findByIdempotencyKey: found on 200; two consecutive 404s (settle window) → verified_absent; transport → inconclusive", async () => {
     const found = makeAdapter([
-      { match: (u) => u.includes("/events/cleardesk-"), respond: (_init: RequestInit) => jsonResponse(200, { id: "cleardesk-9f1d2a4b-1234-4abc-8def-001122334455" }) },
+      { match: (u) => u.includes("/events/c1"), respond: (_init: RequestInit) => jsonResponse(200, { id: "c19f1d2a4b12344abc8def001122334455" }) },
     ]);
     await found.connect();
     await expect(found.adapter.findByIdempotencyKey(draft.idempotencyKey)).resolves.toEqual({
       status: "found",
-      eventId: "cleardesk-9f1d2a4b-1234-4abc-8def-001122334455",
+      eventId: "c19f1d2a4b12344abc8def001122334455",
     });
 
-    const absent = makeAdapter([{ match: (u) => u.includes("/events/cleardesk-"), respond: (_init: RequestInit) => jsonResponse(404, {}) }]);
+    const absent = makeAdapter([{ match: (u) => u.includes("/events/c1"), respond: (_init: RequestInit) => jsonResponse(404, {}) }]);
     await absent.connect();
     await expect(absent.adapter.findByIdempotencyKey(draft.idempotencyKey)).resolves.toEqual({ status: "verified_absent" });
 
@@ -216,7 +217,7 @@ describe("GoogleCalendarAdapter", () => {
   it("a 401 on write triggers exactly one refresh + retry before reporting", async () => {
     let postCount = 0;
     const { adapter, connect, integration } = (() => {
-      const config = new MemoryBusinessConfigRepo();
+      const store = new MemoryGoogleIntegrationStore();
       const audit = new MemoryAuditRepo();
       const secretStore = createSecretStore(
         { kind: "vault", verify: async () => ({ ok: true }) },
@@ -236,12 +237,12 @@ describe("GoogleCalendarAdapter", () => {
         if (init.method === "POST") {
           postCount += 1;
           // First insert: stale token → 401. After refresh: 200.
-          return jsonResponse(postCount === 1 ? 401 : 200, postCount === 1 ? {} : { id: "cleardesk-x" });
+          return jsonResponse(postCount === 1 ? 401 : 200, postCount === 1 ? {} : { id: "c19f1d2a4b12344abc8def001122334455" });
         }
         return jsonResponse(500, {});
       }) as typeof fetch;
       const integration = new GoogleIntegrationService({
-        config, secretStore, audit,
+        store, secretStore, audit,
         creds: { clientId: "cid", clientSecret: "csec", redirectUri: "http://localhost:8787/api/v1/admin/integrations/google/callback", calendarId: "cal@test" },
         fetchFn: integrationFetch,
         now: () => 1_000_000,
@@ -250,10 +251,10 @@ describe("GoogleCalendarAdapter", () => {
       const connect = async () => {
         const { authUrl } = await integration.beginConnect("a");
         const state = new URL(authUrl).searchParams.get("state") as string;
-        await integration.handleCallback({ code: "c", state }, null);
+        await integration.handleCallback({ code: "c", state });
         connected = true;
       };
-      return { adapter, connect, integration, config, audit, connected };
+      return { adapter, connect, integration, store, audit, connected };
     })() as { adapter: CalendarProvider; connect: () => Promise<void>; integration: GoogleIntegrationService };
     await connect();
     await expect(adapter.createEvent(draft)).resolves.toMatchObject({ status: "created" });
@@ -274,10 +275,81 @@ describe("GoogleCalendarAdapter", () => {
     ]);
     await connect();
     const outcome = await adapter.createEvent(draft);
-    expect(outcome).toEqual({ status: "created", eventId: "cleardesk-9f1d2a4b-1234-4abc-8def-001122334455" });
+    expect(outcome).toEqual({ status: "created", eventId: "c19f1d2a4b12344abc8def001122334455" });
     const body = sentBody as unknown as Record<string, unknown>;
-    expect(body?.["id"]).toBe("cleardesk-9f1d2a4b-1234-4abc-8def-001122334455");
+    expect(body?.["id"]).toBe("c19f1d2a4b12344abc8def001122334455");
     expect((body?.["extendedProperties"] as unknown as { private: { idempotencyKey: string } }).private.idempotencyKey).toBe(draft.idempotencyKey);
     expect((body?.["start"] as unknown as { timeZone: string }).timeZone).toBe("Europe/Berlin");
+  });
+});
+
+describe("googleEventIdFor (Google base32hex contract)", () => {
+  it("produces IDs matching Google's base32hex rule: [a-v0-9], length 5-1024", () => {
+    const keys = [
+      "9f1d2a4b-1234-4abc-8def-001122334455",
+      "00000000-0000-0000-0000-000000000000",
+      "ffffffff-ffff-ffff-ffff-ffffffffffff",
+      "a-b-c-d-e",
+      "wxyz wxyz", // out-of-range letters and a space must be stripped
+    ];
+    for (const key of keys) {
+      const id = googleEventIdFor(key);
+      expect(id).toMatch(/^[0-9a-v]{5,1024}$/);
+    }
+  });
+
+  it("is deterministic and injective for UUID-shaped keys", () => {
+    const a = "9f1d2a4b-1234-4abc-8def-001122334455";
+    const b = "9f1d2a4b-1234-4abc-8def-001122334456";
+    expect(googleEventIdFor(a)).toBe(googleEventIdFor(a)); // stable across restarts
+    expect(googleEventIdFor(a)).not.toBe(googleEventIdFor(b));
+    // The BookingService UUID shape survives fully (32 hex chars + 2 prefix).
+    expect(googleEventIdFor(a)).toHaveLength(34);
+    expect(googleEventIdFor(a)).toBe("c1" + a.replace(/-/g, ""));
+  });
+});
+
+describe("FreeBusy hardening (corrective review)", () => {
+  const okWindow = ["2026-11-14T07:00:00Z", "2026-11-14T10:00:00Z"] as const;
+
+  it("a missing calendar entry is an availability failure, never an empty calendar", async () => {
+    const { adapter, connect } = makeAdapter([
+      { match: (u) => u.endsWith("/freeBusy"), respond: (_init) => jsonResponse(200, { calendars: {} }) },
+    ]);
+    await connect();
+    await expect(adapter.checkAvailability(...okWindow)).rejects.toMatchObject({ code: "CALENDAR_UNAVAILABLE" });
+  });
+
+  it("a per-calendar error entry is an availability failure", async () => {
+    const { adapter, connect } = makeAdapter([
+      {
+        match: (u) => u.endsWith("/freeBusy"),
+        respond: (_init) => jsonResponse(200, { calendars: { "cal@test": { errors: [{ domain: "calendar", reason: "notFound" }], busy: [] } } }),
+      },
+    ]);
+    await connect();
+    await expect(adapter.checkAvailability(...okWindow)).rejects.toMatchObject({ code: "CALENDAR_UNAVAILABLE" });
+  });
+
+  it("malformed busy intervals are rejected, not silently filtered", async () => {
+    for (const busy of [
+      [{ start: 12, end: "2026-11-14T08:00:00Z" }],
+      [{ start: "2026-11-14T08:00:00Z", end: "not-a-date" }],
+      "garbage",
+    ]) {
+      const { adapter, connect } = makeAdapter([
+        { match: (u) => u.endsWith("/freeBusy"), respond: (_init) => jsonResponse(200, { calendars: { "cal@test": { busy } } }) },
+      ]);
+      await connect();
+      await expect(adapter.checkAvailability(...okWindow)).rejects.toMatchObject({ code: "CALENDAR_UNAVAILABLE" });
+    }
+  });
+
+  it("missing busy array is rejected (unverified availability)", async () => {
+    const { adapter, connect } = makeAdapter([
+      { match: (u) => u.endsWith("/freeBusy"), respond: (_init) => jsonResponse(200, { calendars: { "cal@test": {} } }) },
+    ]);
+    await connect();
+    await expect(adapter.checkAvailability(...okWindow)).rejects.toMatchObject({ code: "CALENDAR_UNAVAILABLE" });
   });
 });

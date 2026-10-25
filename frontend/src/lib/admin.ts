@@ -109,6 +109,8 @@ export interface GoogleCalendarStatus {
   connectedBy: string | null;
   lastError: string | null;
   lastVerifiedAt: string | null;
+  /** false while the google_integration table (migration 0007) is not applied. */
+  storeAvailable: boolean;
 }
 
 export const adminApi = {
