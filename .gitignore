@@ -10,3 +10,4 @@ sidecar/whisper/__pycache__/
 supabase/.temp/
 supabase/.branches/
 .supabase/
+tsconfig.tsbuildinfo

@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, "Times New Roman", serif;
+
+  /* Warm neutral ramp */
+  --color-canvas: #f7f5f1;
+  --color-surface: #fffefc;
+  --color-raised: #fffdf9;
+  --color-line: #e7e3da;
+  --color-line-strong: #d5d0c4;
+  --color-ink: #1d2b26;
+  --color-ink-2: #4c574f;
+  --color-ink-3: #7b837a;
+
+  /* Brand: deep pine */
+  --color-pine-50: #eaf2ef;
+  --color-pine-100: #d6e7e1;
+  --color-pine-200: #aecfc5;
+  --color-pine-400: #3d8578;
+  --color-pine-500: #227467;
+  --color-pine-600: #14655b;
+  --color-pine-700: #0f5148;
+  --color-pine-800: #0d423b;
+  --color-pine-900: #0b2f2a;
+
+  /* Status */
+  --color-success-fg: #1c6b43;
+  --color-success-bg: #e8f3ec;
+  --color-warn-fg: #8a5a00;
+  --color-warn-bg: #fbf1dd;
+  --color-danger-fg: #a3271f;
+  --color-danger-bg: #fbeae7;
+  --color-info-fg: #33506b;
+  --color-info-bg: #e9eff6;
+
+  --radius-card: 14px;
+  --shadow-slip: 0 1px 2px rgb(29 43 38 / 0.05), 0 12px 32px -12px rgb(29 43 38 / 0.18);
+}
+
+html {
+  font-family: var(--font-sans);
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-pine-600);
+  outline-offset: 2px;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Micro label — used sparingly for true metadata */
+.micro {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+}
+
+/* Thin scrollbars for panes, not global */
+.pane-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.rise {
+  animation: rise 0.24s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Typing indicator dots */
+@keyframes pulse-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+.typing-dot {
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.typing-dot:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+/* Voice recording pulse */
+@keyframes rec-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(163 39 31 / 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgb(163 39 31 / 0);
+  }
+}
+.rec-pulse {
+  animation: rec-pulse 1.4s ease-in-out infinite;
+}

@@ -46,3 +46,6 @@ Speech sidecar starts on demand (RAM-gated); Python venv: `sidecar/whisper/.venv
 ## Frontend phase (frontend-master skill)
 
 UI/UX ownership transfers to the frontend phase per INTEGRATION.md (journeys §2, session/cache/retry §3). Backend contract questions → API.md; this file + PROGRESS.md §7 are the resume anchors.
+
+**Implemented 2026-10-25 — `frontend/` (Vite 6 + React 18 + TS strict + Tailwind v4).**
+Run: `cd frontend && npm ci && npm run dev` (port 5173, dev proxy `/api` → `127.0.0.1:8787`; start the backend first). Copy `frontend/.env.example` → `frontend/.env` and set `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` to enable admin sign-in (client-safe values only; never server secrets). No admin user exists in `app_admins` yet — provisioning one is an owner action. Rendered-verification evidence and honest NOT OBSERVED items: PROGRESS.md §4 "Frontend phase" row.
