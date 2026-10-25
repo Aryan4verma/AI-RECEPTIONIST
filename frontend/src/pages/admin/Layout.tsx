@@ -50,7 +50,16 @@ export default function AdminLayout() {
           ))}
         </nav>
         <div className="border-t border-white/10 p-4">
-          <p className="truncate text-xs text-pine-200/70" title={user?.email}>
+          <a
+            href="/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-[13px] font-medium text-pine-100/80 hover:text-white"
+            title="Open the customer chat in a new tab"
+          >
+            Customer chat ↗
+          </a>
+          <p className="mt-3 truncate text-xs text-pine-200/70" title={user?.email}>
             {user?.email}
           </p>
           <button onClick={handleSignOut} className="mt-1.5 text-[13px] font-medium text-pine-100/80 hover:text-white">

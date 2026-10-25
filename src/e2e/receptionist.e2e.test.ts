@@ -120,7 +120,7 @@ function build(intentResponses: Array<{ intent: string }> = [
       audit,
     },
   });
-  return { app, conversations, bookingState, customers, audit, calendar, bookingService, conversationService };
+  return { app, conversations, bookingState, customers, audit, calendar, bookingService, conversationService, config };
 }
 
 function authHeaders(token: string) {
@@ -227,6 +227,36 @@ describe("E2E (fixture): full customer booking journey", () => {
     await app.close();
   });
 
+  // The admin UI's Hours/Services editors sync generated FAQ entries (tagged
+  // source:"auto:…"). This proves the receptionist answers from entries in
+  // exactly the shape those tabs generate — retrievability of saved knowledge.
+  it("auto-generated knowledge entries (hours/services shapes) are retrievable verbatim", async () => {
+    const hoursAnswer = "Our opening hours are: Monday to Friday 09:00–17:00 (Europe/Berlin).";
+    const serviceAnswer = "Yes, we offer Consultation (45 minutes) — A 45-minute initial assessment.";
+    const h = build([{ intent: "ask_question" }, { intent: "ask_question" }]);
+    const app = await h.app;
+    // Seed FAQs in the exact shape the admin Hours/Services tabs generate:
+    await h.config.insertVersion("faqs", {
+      entries: [
+        { question: "What are your opening hours?", answer: hoursAnswer, keywords: ["open", "opening", "hours"], source: "auto:hours" },
+        { question: "Do you offer Consultation?", answer: serviceAnswer, keywords: ["consultation"], source: "auto:services" },
+      ],
+    }, 2, null);
+    const s1 = await h.conversationService.start("text");
+    const q1 = await app.inject({
+      method: "POST", url: `/api/v1/conversations/${s1.conversationId}/messages`,
+      headers: authHeaders(s1.accessToken), payload: { text: "What are your opening hours?" },
+    });
+    expect(q1.json().reply).toBe(hoursAnswer);
+    const s2 = await h.conversationService.start("text");
+    const q2 = await app.inject({
+      method: "POST", url: `/api/v1/conversations/${s2.conversationId}/messages`,
+      headers: authHeaders(s2.accessToken), payload: { text: "Do you offer consultation?" },
+    });
+    expect(q2.json().reply).toBe(serviceAnswer);
+    await app.close();
+  });
+
   it("injection-style customer text cannot create bookings without the extraction/confirmation flow", async () => {
     const h = build([{ intent: "unknown" }]);
     const app = await h.app;
@@ -240,6 +270,112 @@ describe("E2E (fixture): full customer booking journey", () => {
     // Whatever the model classified, NO appointment exists and NO event was created:
     expect(h.calendar["events"].size).toBe(0);
     expect(h.bookingState.appointments).toHaveLength(0);
+    await app.close();
+  });
+
+  // Regression (owner report 2026-10-25): the frontend "End session" button
+  // used the /cancel route, which cancels a CONFIRMED appointment. Ending a
+  // conversation and cancelling an appointment are now separate routes.
+  it("ending a conversation NEVER cancels a confirmed appointment", async () => {
+    const h = build();
+    const app = await h.app;
+    const started = await app.inject({ method: "POST", url: "/api/v1/conversations", payload: { channel: "text" } });
+    const { conversationId, accessToken } = started.json();
+    await app.inject({ method: "POST", url: `/api/v1/conversations/${conversationId}/messages`, headers: authHeaders(accessToken), payload: { text: "I want to book a dentist appointment" } });
+    await app.inject({ method: "POST", url: `/api/v1/conversations/${conversationId}/messages`, headers: authHeaders(accessToken), payload: { text: "Asha Verma" } });
+    const turn3 = await app.inject({
+      method: "POST", url: `/api/v1/conversations/${conversationId}/messages`,
+      headers: authHeaders(accessToken), payload: { text: `asha@example.com — dentist consultation ${futureIso} in person` },
+    });
+    const offer = turn3.json().offer;
+    const confirm = await app.inject({
+      method: "POST", url: `/api/v1/conversations/${conversationId}/confirm`,
+      headers: authHeaders(accessToken), payload: { offerToken: offer.offerToken, decision: "accept" },
+    });
+    expect(confirm.json().bookingState).toBe("CONFIRMED");
+    const eventId = confirm.json().eventId;
+
+    // End the conversation (what the "End session" button calls):
+    const end = await app.inject({ method: "POST", url: `/api/v1/conversations/${conversationId}/end`, headers: authHeaders(accessToken), payload: {} });
+    expect(end.statusCode).toBe(200);
+    expect(end.json().conversationState).toBe("ended");
+
+    // The appointment, calendar event and public booking status all survive:
+    const status = await app.inject({ method: "GET", url: `/api/v1/conversations/${conversationId}`, headers: authHeaders(accessToken) });
+    expect(status.json().status).toBe("ended");
+    expect(status.json().booking).toBe("confirmed");
+    expect(h.calendar["events"].size).toBe(1);
+    expect(h.bookingState.appointments.every((a) => a.status !== "cancelled")).toBe(true);
+
+    // Further messages are refused on an ended conversation:
+    const refused = await app.inject({
+      method: "POST", url: `/api/v1/conversations/${conversationId}/messages`,
+      headers: authHeaders(accessToken), payload: { text: "hello again" },
+    });
+    expect(refused.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("explicit customer /cancel still cancels the confirmed appointment (separation guard)", async () => {
+    const h = build();
+    const app = await h.app;
+    const started = await app.inject({ method: "POST", url: "/api/v1/conversations", payload: { channel: "text" } });
+    const { conversationId, accessToken } = started.json();
+    await app.inject({ method: "POST", url: `/api/v1/conversations/${conversationId}/messages`, headers: authHeaders(accessToken), payload: { text: "I want to book a dentist appointment" } });
+    await app.inject({ method: "POST", url: `/api/v1/conversations/${conversationId}/messages`, headers: authHeaders(accessToken), payload: { text: "Asha Verma" } });
+    const turn3 = await app.inject({
+      method: "POST", url: `/api/v1/conversations/${conversationId}/messages`,
+      headers: authHeaders(accessToken), payload: { text: `asha@example.com — dentist consultation ${futureIso} in person` },
+    });
+    const confirm = await app.inject({
+      method: "POST", url: `/api/v1/conversations/${conversationId}/confirm`,
+      headers: authHeaders(accessToken), payload: { offerToken: turn3.json().offer.offerToken, decision: "accept" },
+    });
+    expect(confirm.json().bookingState).toBe("CONFIRMED");
+
+    const cancel = await app.inject({ method: "POST", url: `/api/v1/conversations/${conversationId}/cancel`, headers: authHeaders(accessToken), payload: {} });
+    expect(cancel.statusCode).toBe(200);
+    const status = await app.inject({ method: "GET", url: `/api/v1/conversations/${conversationId}`, headers: authHeaders(accessToken) });
+    expect(status.json().booking).toBe("cancelled");
+    expect(status.json().status).toBe("ended");
+    await app.close();
+  });
+
+  // Only claim staff involvement when a REAL verified handoff exists: an
+  // unanswered question or an in-chat cancellation request must actually
+  // escalate the conversation (visible in the admin console) before the copy
+  // says the team will follow up.
+  it("unmatched questions and cancel requests escalate for real, and the turn reports escalated state", async () => {
+    const h = build([{ intent: "ask_question" }, { intent: "cancel_appointment" }, { intent: "ask_question" }]);
+    const app = await h.app;
+
+    const s1 = await h.conversationService.start("text");
+    const q = await app.inject({
+      method: "POST", url: `/api/v1/conversations/${s1.conversationId}/messages`,
+      headers: authHeaders(s1.accessToken), payload: { text: "Do you validate parking tickets?" },
+    });
+    expect(q.json().reply).toContain("flagged your question for the team");
+    expect(q.json().conversationState).toBe("escalated");
+    expect((await h.conversations.rows.get(s1.conversationId))?.status).toBe("escalated");
+    expect(h.audit.entries.some((e) => e.action === "conversation.escalated" && e.entityId === s1.conversationId)).toBe(true);
+
+    const s2 = await h.conversationService.start("text");
+    const c = await app.inject({
+      method: "POST", url: `/api/v1/conversations/${s2.conversationId}/messages`,
+      headers: authHeaders(s2.accessToken), payload: { text: "Please cancel my appointment" },
+    });
+    expect(c.json().reply).toContain("flagged this for the team");
+    expect(c.json().conversationState).toBe("escalated");
+    expect((await h.conversations.rows.get(s2.conversationId))?.status).toBe("escalated");
+
+    // A matched FAQ keeps answering without escalating:
+    const s3 = await h.conversationService.start("text");
+    const faq = await app.inject({
+      method: "POST", url: `/api/v1/conversations/${s3.conversationId}/messages`,
+      headers: authHeaders(s3.accessToken), payload: { text: "What are your opening hours?" },
+    });
+    expect(faq.json().reply).toBe("We are open Monday to Friday, 9am to 6pm.");
+    expect(faq.json().conversationState).not.toBe("escalated");
     await app.close();
   });
 });

@@ -46,9 +46,30 @@ export default function BusinessConfig() {
     if (!user || !content) return;
     setSaving(true);
     try {
-      const r = await adminApi.saveConfig(user.token, cat, content);
+      // Hours and Services keep their own category data AND sync generated
+      // FAQ entries — FAQs are the receptionist's only retrieval surface, so
+      // knowledge saved here must exist there to be answerable.
+      const generated =
+        cat === "hours" ? hoursFaqs(content)
+        : cat === "services" ? servicesFaqs(content)
+        : null;
+      let r = await adminApi.saveConfig(user.token, cat, content);
+      if (generated) {
+        const faqs = await adminApi.config(user.token, "faqs");
+        const entries: FaqEntry[] = Array.isArray(faqs.content?.["entries"])
+          ? (faqs.content["entries"] as FaqEntry[])
+          : [];
+        const kept = entries.filter((e) => (typeof e.source === "string" ? e.source : "") !== generated.source);
+        const nextEntries = [...kept, ...generated.entries];
+        r = await adminApi.saveConfig(user.token, "faqs", { ...(faqs.content ?? {}), entries: nextEntries });
+        setToast({
+          tone: "success",
+          msg: `Saved — the receptionist can now answer these ${generated.entries.length ? `(${generated.entries.length} FAQ${generated.entries.length > 1 ? "s" : ""} generated)` : ""}`,
+        });
+      } else {
+        setToast({ tone: "success", msg: `Saved (version ${r.version}) — live on new messages` });
+      }
       setVersion(r.version);
-      setToast({ tone: "success", msg: `Saved (version ${r.version}) — live on new messages` });
     } catch (e) {
       setToast({ tone: "error", msg: e instanceof ApiError ? e.message : "Couldn't save." });
     } finally {
@@ -94,7 +115,8 @@ export default function BusinessConfig() {
           {cat === "hours" && <HoursForm content={content} onChange={setContentNonNull} />}
           {cat === "appointment_types" && <AppointmentTypesForm content={content} onChange={setContentNonNull} />}
           {cat === "faqs" && <FaqForm content={content} onChange={setContentNonNull} />}
-          {(cat === "services" || cat === "escalation") && (
+          {cat === "services" && <ServicesForm content={content} onChange={setContentNonNull} />}
+          {cat === "escalation" && (
             <JsonForm content={content} onChange={setContentNonNull} hint="Raw JSON for this category — edited by an administrator." />
           )}
           <p className="mt-4 text-xs text-ink-3">Current version: {version}</p>
@@ -130,10 +152,72 @@ function BusinessInfoForm({ content, onChange }: { content: Record<string, unkno
   );
 }
 
+/* ---------- Hours: per-day editor + generated retrievable FAQ ---------- */
+const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
+type Day = (typeof DAYS)[number];
+
+interface DayRow {
+  day: Day;
+  open: boolean;
+  start: string;
+  end: string;
+}
+
+const DEFAULT_DAYS: DayRow[] = DAYS.map((d) => ({ day: d, open: d !== "saturday" && d !== "sunday", start: "09:00", end: "17:00" }));
+
+function readDays(content: Record<string, unknown>): DayRow[] {
+  const raw = Array.isArray(content["days"]) ? (content["days"] as Partial<DayRow>[]) : [];
+  return DAYS.map((d, i) => {
+    const r = raw.find((x) => x?.day === d) ?? raw[i];
+    return {
+      day: d,
+      open: r?.open === true,
+      start: typeof r?.start === "string" ? r.start : "09:00",
+      end: typeof r?.end === "string" ? r.end : "17:00",
+    };
+  });
+}
+
+function hoursAnswer(days: DayRow[], tz: string): string {
+  const open = days.filter((d) => d.open && d.start && d.end);
+  if (open.length === 0) return "We don't have regular opening hours set — please contact us to arrange a time.";
+  const parts: string[] = [];
+  let i = 0;
+  while (i < open.length) {
+    const cur = open[i]!;
+    let j = i;
+    while (j + 1 < open.length && open[j + 1]!.start === cur.start && open[j + 1]!.end === cur.end) j++;
+    const label = i === j ? cap(cur.day) : `${cap(cur.day)} to ${cap(open[j]!.day)}`;
+    parts.push(`${label} ${cur.start}–${cur.end}`);
+    i = j + 1;
+  }
+  return `Our opening hours are: ${parts.join(", ")}${tz ? ` (${tz})` : ""}.`;
+}
+
+function cap(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** FAQ entries generated from the hours editor (tagged, replaced on re-save). */
+function hoursFaqs(content: Record<string, unknown>): { source: string; entries: FaqEntry[] } {
+  const tz = typeof content["timezone"] === "string" ? content["timezone"] : "";
+  const days = readDays(content);
+  return {
+    source: "auto:hours",
+    entries: [
+      {
+        question: "What are your opening hours?",
+        answer: hoursAnswer(days, tz),
+        keywords: ["open", "opening", "hours"],
+        source: "auto:hours",
+      },
+    ],
+  };
+}
+
 function HoursForm({ content, onChange }: { content: Record<string, unknown>; onChange: React.Dispatch<React.SetStateAction<Record<string, unknown>>> }) {
   const tz = useField(content, onChange as Setter, "timezone");
-  const tzValid = tz.value === "" || Intl.DateTimeFormat().resolvedOptions().timeZone !== undefined;
-  void tzValid;
+  const days = readDays(content);
   const validTz = (() => {
     try {
       new Intl.DateTimeFormat("en", { timeZone: tz.value });
@@ -142,8 +226,15 @@ function HoursForm({ content, onChange }: { content: Record<string, unknown>; on
       return false;
     }
   })();
+  const setDay = (i: number, patch: Partial<DayRow>) => {
+    const next = days.map((d, idx) => (idx === i ? { ...d, ...patch } : d));
+    onChange((c) => ({ ...c, days: next }));
+  };
   return (
     <div className="space-y-4">
+      <p className="text-[13px] leading-relaxed text-ink-2">
+        Regular hours per day. Saving also updates the receptionist's "opening hours" answer automatically.
+      </p>
       <Field
         label="IANA timezone"
         htmlFor="h-tz"
@@ -152,6 +243,131 @@ function HoursForm({ content, onChange }: { content: Record<string, unknown>; on
       >
         <Input id="h-tz" value={tz.value} onChange={(e) => tz.set(e.target.value)} placeholder="Europe/Berlin" />
       </Field>
+      <div className="divide-y divide-line rounded-xl border border-line">
+        {days.map((d, i) => (
+          <div key={d.day} className="flex items-center gap-3 px-3.5 py-2.5">
+            <label className="flex w-28 items-center gap-2 text-[13px] font-medium text-ink">
+              <input type="checkbox" checked={d.open} onChange={(e) => setDay(i, { open: e.target.checked })} className="accent-pine-600" />
+              {cap(d.day)}
+            </label>
+            {d.open ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="time"
+                  aria-label={`${cap(d.day)} opens`}
+                  value={d.start}
+                  onChange={(e) => setDay(i, { start: e.target.value })}
+                  className="tabular rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-[13px] text-ink focus:border-pine-600 focus:outline-none"
+                />
+                <span className="text-ink-3">–</span>
+                <input
+                  type="time"
+                  aria-label={`${cap(d.day)} closes`}
+                  value={d.end}
+                  onChange={(e) => setDay(i, { end: e.target.value })}
+                  className="tabular rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-[13px] text-ink focus:border-pine-600 focus:outline-none"
+                />
+              </div>
+            ) : (
+              <span className="text-[13px] text-ink-3">Closed</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Services: structured editor + generated retrievable FAQs ---------- */
+interface ServiceItem {
+  name: string;
+  description: string;
+  durationMinutes: number | null;
+}
+
+function readServices(content: Record<string, unknown>): ServiceItem[] {
+  const raw = Array.isArray(content["items"]) ? (content["items"] as Partial<ServiceItem>[]) : [];
+  return raw.map((r) => ({
+    name: typeof r?.name === "string" ? r.name : "",
+    description: typeof r?.description === "string" ? r.description : "",
+    durationMinutes: typeof r?.durationMinutes === "number" ? r.durationMinutes : null,
+  }));
+}
+
+function nameTokens(name: string): string[] {
+  return name.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 2);
+}
+
+/** FAQ entries generated from the services editor (tagged, replaced on re-save). */
+function servicesFaqs(content: Record<string, unknown>): { source: string; entries: FaqEntry[] } {
+  const items = readServices(content).filter((s) => s.name.trim().length > 0);
+  const entries: FaqEntry[] = items.map((s) => {
+    const dur = s.durationMinutes ? ` (${s.durationMinutes} minutes)` : "";
+    const desc = s.description ? ` — ${s.description}` : "";
+    return {
+      question: `Do you offer ${s.name}?`,
+      answer: `Yes, we offer ${s.name}${dur}${desc}.`,
+      keywords: nameTokens(s.name),
+      source: "auto:services",
+    };
+  });
+  if (items.length > 1) {
+    entries.push({
+      question: "What services do you offer?",
+      answer: `We offer: ${items.map((s) => s.name).join(", ")}.`,
+      keywords: ["services", "offer"],
+      source: "auto:services",
+    });
+  }
+  return { source: "auto:services", entries };
+}
+
+function ServicesForm({ content, onChange }: { content: Record<string, unknown>; onChange: React.Dispatch<React.SetStateAction<Record<string, unknown>>> }) {
+  const items = readServices(content);
+  const update = (i: number, patch: Partial<ServiceItem>) =>
+    onChange((c) => {
+      const next = readServices(c).map((s, idx) => (idx === i ? { ...s, ...patch } : s));
+      return { ...c, items: next };
+    });
+  const remove = (i: number) => onChange((c) => ({ ...c, items: readServices(c).filter((_, idx) => idx !== i) }));
+  const add = () => onChange((c) => ({ ...c, items: [...readServices(c), { name: "", description: "", durationMinutes: null }] }));
+  return (
+    <div className="space-y-4">
+      <p className="text-[13px] leading-relaxed text-ink-2">
+        Services your business offers. Saving makes each one answerable by the receptionist ("Do you offer…?").
+      </p>
+      {items.map((s, i) => (
+        <fieldset key={i} className="space-y-2.5 rounded-xl border border-line p-4">
+          <legend className="micro">Service {i + 1}</legend>
+          <div className="flex flex-wrap gap-2.5">
+            <div className="min-w-44 flex-1">
+              <Field label="Name" htmlFor={`sv-n-${i}`}>
+                <Input id={`sv-n-${i}`} value={s.name} onChange={(e) => update(i, { name: e.target.value })} placeholder="Consultation" />
+              </Field>
+            </div>
+            <div className="w-36">
+              <Field label="Minutes (optional)" htmlFor={`sv-d-${i}`}>
+                <Input
+                  id={`sv-d-${i}`}
+                  inputMode="numeric"
+                  className="tabular"
+                  value={s.durationMinutes ?? ""}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    update(i, { durationMinutes: e.target.value !== "" && Number.isFinite(n) && n > 0 ? n : null });
+                  }}
+                  placeholder="45"
+                />
+              </Field>
+            </div>
+          </div>
+          <Field label="Short description (optional)" htmlFor={`sv-s-${i}`}>
+            <Input id={`sv-s-${i}`} value={s.description} onChange={(e) => update(i, { description: e.target.value })} placeholder="A 45-minute initial assessment" />
+          </Field>
+          <Button size="sm" variant="danger" onClick={() => remove(i)}>Remove</Button>
+        </fieldset>
+      ))}
+      <Button variant="secondary" size="sm" onClick={add}>+ Add service</Button>
     </div>
   );
 }
@@ -185,15 +401,17 @@ function AppointmentTypesForm({ content, onChange }: { content: Record<string, u
   );
 }
 
-interface Faq {
+interface FaqEntry {
   question?: string;
   answer?: string;
   keywords?: string[];
+  /** Marker for entries generated from the Hours/Services tabs. */
+  source?: string;
 }
 
 function FaqForm({ content, onChange }: { content: Record<string, unknown>; onChange: React.Dispatch<React.SetStateAction<Record<string, unknown>>> }) {
-  const entries: Faq[] = Array.isArray(content["entries"]) ? (content["entries"] as Faq[]) : [];
-  const update = (i: number, patch: Partial<Faq>) =>
+  const entries: FaqEntry[] = Array.isArray(content["entries"]) ? (content["entries"] as FaqEntry[]) : [];
+  const update = (i: number, patch: Partial<FaqEntry>) =>
     onChange((c) => {
       const next = entries.map((e, idx) => (idx === i ? { ...e, ...patch } : e));
       return { ...c, entries: next };
@@ -204,10 +422,20 @@ function FaqForm({ content, onChange }: { content: Record<string, unknown>; onCh
 
   return (
     <div className="space-y-4">
+      <p className="text-[13px] leading-relaxed text-ink-2">
+        The receptionist answers questions with these entries <em>exactly as written</em>. Entries marked{" "}
+        <span className="rounded bg-pine-50 px-1.5 py-0.5 text-[11px] font-semibold text-pine-700">Auto</span> are generated
+        from Hours/Services and replaced when those tabs are saved.
+      </p>
       {entries.length === 0 && <p className="text-sm text-ink-3">No FAQs yet — add ones customers actually ask.</p>}
       {entries.map((f, i) => (
         <fieldset key={i} className="space-y-2.5 rounded-xl border border-line p-4">
-          <legend className="micro">FAQ {i + 1}</legend>
+          <legend className="micro flex items-center gap-2">
+            FAQ {i + 1}
+            {f.source && (
+              <span className="rounded bg-pine-50 px-1.5 py-0.5 text-[11px] font-semibold text-pine-700">Auto</span>
+            )}
+          </legend>
           <Field label="Question" htmlFor={`fq-${i}`}>
             <Input id={`fq-${i}`} value={f.question ?? ""} onChange={(e) => update(i, { question: e.target.value })} placeholder="What are your opening hours?" />
           </Field>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, postAudio, ApiError, type Offer, type TurnResult } from "../../lib/api";
-import { Badge, Button, ErrorNote, Spinner, Toast } from "../../components/ui";
+import { Badge, Button, ErrorNote, Modal, Spinner, Toast } from "../../components/ui";
 import { formatDateTime } from "../../lib/format";
 
 /* ---------- Types ---------- */
@@ -39,9 +39,13 @@ function loadSession(): { id: string; token: string } | null {
 function OfferSlip({
   pending,
   onConfirm,
+  onCancelAsk,
+  cancelling,
 }: {
   pending: PendingOffer;
   onConfirm: (decision: "accept" | "decline") => void | Promise<void>;
+  onCancelAsk: () => void;
+  cancelling: boolean;
 }) {
   const { offer: o } = pending;
   const [left, setLeft] = useState(() => Math.max(0, new Date(o.expiresAt).getTime() - Date.now()));
@@ -58,12 +62,14 @@ function OfferSlip({
   if (pending.outcome) {
     const ok = pending.outcome === "CONFIRMED";
     const verifying = pending.outcome === "UNRESOLVED";
+    const cancelled = pending.outcome === "CANCELLED";
     return (
       <div className={`rise mx-auto mt-2 w-full max-w-md rounded-card border p-5 shadow-slip ${ok ? "border-pine-200 bg-pine-50" : verifying ? "border-warn-fg/25 bg-warn-bg" : "border-line bg-raised"}`}>
         <div className="flex items-center justify-between">
-          <span className="micro">{ok ? "Appointment confirmed" : verifying ? "Verifying with the calendar" : "Not booked"}</span>
+          <span className="micro">{ok ? "Appointment confirmed" : verifying ? "Verifying with the calendar" : cancelled ? "Appointment cancelled" : "Not booked"}</span>
           {ok && <Badge tone="success">Confirmed</Badge>}
           {verifying && <Badge tone="warn">Verifying</Badge>}
+          {cancelled && <Badge tone="neutral">Cancelled</Badge>}
         </div>
         <p className="mt-2 font-display text-lg leading-snug text-ink">{formatDateTime(o.slot)}</p>
         <p className="mt-1 text-sm text-ink-2">
@@ -74,8 +80,19 @@ function OfferSlip({
             ? "You're all set. We've saved this appointment — you'll receive a confirmation."
             : verifying
               ? "We're double-checking the calendar. Your booking is being verified — you'll be contacted once confirmed. Nothing else is needed from you."
-              : "This time wasn't booked. You can ask for another slot whenever you're ready."}
+              : cancelled
+                ? "This appointment was cancelled at your request. You can book a new one anytime."
+                : "This time wasn't booked. You can ask for another slot whenever you're ready."}
         </p>
+        {ok && (
+          <button
+            onClick={onCancelAsk}
+            disabled={cancelling}
+            className="mt-3 text-xs font-medium text-ink-2 underline underline-offset-2 hover:text-danger-fg disabled:opacity-50"
+          >
+            {cancelling ? "Cancelling…" : "Cancel this appointment"}
+          </button>
+        )}
       </div>
     );
   }
@@ -119,6 +136,9 @@ export default function Chat() {
   const [speak, setSpeak] = useState(false);
   const [recording, setRecording] = useState(false);
   const [consent, setConsent] = useState(false);
+  const [cancelAskOpen, setCancelAskOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [sessionEnded, setSessionEnded] = useState(false);
 
   const sessionRef = useRef<{ id: string; token: string } | null>(loadSession());
   const nextId = useRef(1);
@@ -196,7 +216,13 @@ export default function Chat() {
       const r = await api.sendMessage(s.id, s.token, text.trim());
       handleTurn(r);
     } catch (e) {
-      push({ role: "system", text: friendlyErr(e) });
+      if (e instanceof ApiError && e.message.includes("has ended")) {
+        sessionStorage.removeItem(SESSION_KEY);
+        sessionRef.current = null;
+        setSessionEnded(true);
+      } else {
+        push({ role: "system", text: friendlyErr(e) });
+      }
     } finally {
       setSending(false);
       setThinking(false);
@@ -210,7 +236,9 @@ export default function Chat() {
       setPendingOffer({ offer: r.offer, decided: null, busy: false, outcome: null });
     }
     if (r.conversationState === "escalated") {
-      push({ role: "system", text: "A colleague has been notified and will follow up with you." });
+      // Honest handoff copy: the conversation is flagged in the staff console —
+      // no push notification is sent, so don't claim one.
+      push({ role: "system", text: "Your conversation has been flagged for the team — they'll see it in their inbox and follow up with you." });
     }
   }
 
@@ -312,7 +340,9 @@ export default function Chat() {
     const s = sessionRef.current;
     if (!s) return;
     try {
-      await api.cancel(s.id, s.token);
+      // Ends the conversation ONLY — a confirmed appointment always survives.
+      // (api.cancel is reserved for the explicit "Cancel appointment" action.)
+      await api.endConversation(s.id, s.token);
     } catch {
       /* ending anyway */
     }
@@ -320,6 +350,33 @@ export default function Chat() {
     sessionRef.current = null;
     speechSynthesis?.cancel();
     setPhase({ kind: "ended", reason: "done" });
+  }
+
+  /** Explicit, deliberate appointment cancellation (never session close). */
+  async function cancelAppointment() {
+    const s = sessionRef.current;
+    if (!s || !pendingOffer) return;
+    setCancelling(true);
+    try {
+      await api.cancel(s.id, s.token);
+      setPendingOffer({ ...pendingOffer, outcome: "CANCELLED" });
+      push({ role: "system", text: "Your appointment was cancelled. This conversation has ended." });
+      setToast({ tone: "info", msg: "Appointment cancelled" });
+      sessionStorage.removeItem(SESSION_KEY);
+      sessionRef.current = null;
+      speechSynthesis?.cancel();
+      setSessionEnded(true);
+    } catch (e) {
+      const err = e instanceof ApiError ? e : null;
+      if (err?.code === "CALENDAR_UNAVAILABLE") {
+        setToast({ tone: "error", msg: "Cancellation couldn't be verified with the calendar — nothing was changed" });
+      } else {
+        setToast({ tone: "error", msg: "Couldn't cancel right now — please try again" });
+      }
+    } finally {
+      setCancelling(false);
+      setCancelAskOpen(false);
+    }
   }
 
   /* ---------- Render ---------- */
@@ -336,7 +393,7 @@ export default function Chat() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {phase.kind === "chat" && (
+            {phase.kind === "chat" && !sessionEnded && (
               <>
                 <label className="hidden items-center gap-1.5 text-xs text-ink-2 sm:flex" title="Read replies aloud">
                   <input type="checkbox" checked={speak} onChange={(e) => setSpeak(e.target.checked)} className="accent-pine-600" />
@@ -347,6 +404,9 @@ export default function Chat() {
                 </Button>
               </>
             )}
+            <a href="/admin" className="text-xs font-medium text-ink-2 underline-offset-2 hover:text-pine-700 hover:underline">
+              Staff sign-in
+            </a>
           </div>
         </div>
       </header>
@@ -392,14 +452,39 @@ export default function Chat() {
               ))}
               {thinking && <TypingRow />}
             </div>
-            {pendingOffer && <OfferSlip pending={pendingOffer} onConfirm={(d) => void confirm(d)} />}
+            {pendingOffer && (
+              <OfferSlip
+                pending={pendingOffer}
+                onConfirm={(d) => void confirm(d)}
+                onCancelAsk={() => setCancelAskOpen(true)}
+                cancelling={cancelling}
+              />
+            )}
             {error && phase.kind === "chat" && <div className="pt-2"><ErrorNote>{error}</ErrorNote></div>}
           </div>
         )}
       </main>
 
       {/* Composer */}
-      {phase.kind === "chat" && (
+      {phase.kind === "chat" && sessionEnded && (
+        <div className="sticky bottom-0 border-t border-line bg-surface/90 backdrop-blur">
+          <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 px-4 pt-3.5 pb-4 sm:px-6">
+            <p className="text-sm text-ink-2">This conversation has ended.</p>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setMessages([]);
+                setPendingOffer(null);
+                setSessionEnded(false);
+                setPhase({ kind: "idle" });
+              }}
+            >
+              New conversation
+            </Button>
+          </div>
+        </div>
+      )}
+      {phase.kind === "chat" && !sessionEnded && (
         <div className="sticky bottom-0 border-t border-line bg-surface/90 backdrop-blur">
           <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-4 sm:px-6">
             <div className="flex items-end gap-2">
@@ -407,7 +492,7 @@ export default function Chat() {
                 onClick={toggleRecording}
                 aria-label={recording ? "Stop recording" : "Record a voice message"}
                 aria-pressed={recording}
-                title={recording ? "Stop recording" : "Hold a conversation by voice"}
+                title={recording ? "Stop recording" : "Record a voice message (not a phone call)"}
                 className={`flex size-11 shrink-0 items-center justify-center rounded-full border transition-colors ${
                   recording ? "rec-pulse border-danger-fg bg-danger-fg text-white" : "border-line-strong bg-surface text-ink hover:border-pine-600 hover:text-pine-600"
                 }`}
@@ -455,6 +540,28 @@ export default function Chat() {
         </div>
       )}
       {toast && <Toast tone={toast.tone} onClose={() => setToast(null)}>{toast.msg}</Toast>}
+
+      {/* Explicit cancellation confirmation — a confirmed appointment is only
+          ever cancelled through this deliberate two-step action. */}
+      <Modal
+        open={cancelAskOpen}
+        onClose={() => !cancelling && setCancelAskOpen(false)}
+        title="Cancel this appointment?"
+        footer={
+          <>
+            <Button variant="secondary" disabled={cancelling} onClick={() => setCancelAskOpen(false)}>
+              Keep it
+            </Button>
+            <Button variant="danger" disabled={cancelling} loading={cancelling} onClick={() => void cancelAppointment()}>
+              Cancel appointment
+            </Button>
+          </>
+        }
+      >
+        This permanently cancels your appointment
+        {pendingOffer ? ` on ${formatDateTime(pendingOffer.offer.slot)} (${pendingOffer.offer.timezone})` : ""} and
+        ends this conversation. Ending a chat never cancels an appointment — only this action does.
+      </Modal>
     </div>
   );
 }
@@ -490,9 +597,10 @@ function Landing({ onStart, error }: { onStart: (c: "text" | "voice") => void; e
             <rect x="9" y="3" width="6" height="11" rx="3" />
             <path d="M5 11a7 7 0 0014 0M12 18v3" strokeLinecap="round" />
           </svg>
-          Talk instead
+          Send a voice message
         </Button>
       </div>
+      <p className="mt-4 text-xs text-ink-3">Voice messages are recordings you send in this chat — not a phone call.</p>
       <p className="mt-10 max-w-sm text-xs leading-relaxed text-ink-3">
         Handled by an AI receptionist. Conversations aren't recorded unless you allow it. For anything urgent, just ask for a
         person.

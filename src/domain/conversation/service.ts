@@ -126,23 +126,27 @@ export class ConversationService {
     reply: string;
     intent: IntentResult["intent"];
     extractionComplete: boolean | null;
+    /** True when THIS turn escalated — the route reports "escalated" from it,
+     *  not from the (now stale) pre-turn conversation row. */
+    escalated: boolean;
     offer?: { slot: string; end: string; expiresAt: string; offerToken: string; durationMinutes: number; timezone: string };
   }> {
     const intent = await this.classifyIntent(conversation, text);
     let reply: string;
     let extractionComplete: boolean | null = null;
+    let escalated = false;
 
     if (intent.intent === "book_appointment" && this.deps.extraction && this.deps.bookingState) {
       const state = await this.deps.bookingState.ensure(conversation.id);
       if (state.state === "AWAIT_CONFIRMATION") {
         const reply = "You have a proposed appointment awaiting your confirmation — shall I book it?";
         await this.recordAssistantMessage(conversation.id, reply);
-        return { reply, intent: intent.intent, extractionComplete: true };
+        return { reply, intent: intent.intent, extractionComplete: true, escalated };
       }
       if (state.state === "UNRESOLVED" || state.state === "CREATE_EVENT" || state.state === "VERIFY_RESULT") {
         const reply = "Your booking is being verified; you will be contacted once confirmed.";
         await this.recordAssistantMessage(conversation.id, reply);
-        return { reply, intent: intent.intent, extractionComplete: true };
+        return { reply, intent: intent.intent, extractionComplete: true, escalated };
       }
       const current = Object.keys(state.extracted).length > 0
         ? ({ ...emptyExtraction(), ...(state.extracted as object) } as Parameters<ExtractionService["merge"]>[0])
@@ -175,6 +179,7 @@ export class ConversationService {
             reply,
             intent: intent.intent,
             extractionComplete,
+            escalated,
             offer: {
               slot: offer.start, end: offer.end, expiresAt: offer.expiresAt,
               offerToken: offer.offerToken, durationMinutes: offer.durationMinutes, timezone: offer.timezone,
@@ -184,14 +189,32 @@ export class ConversationService {
       }
     } else if (intent.intent === "ask_question" && this.deps.knowledge) {
       const answer = await this.deps.knowledge.answer(text);
-      reply = answer.matched && answer.answer ? answer.answer : this.deps.knowledge.fallback();
+      if (answer.matched && answer.answer) {
+        reply = answer.answer;
+      } else {
+        // Unanswered question: create the REAL handoff first (conversation
+        // becomes visible to staff in the admin console), so the fallback
+        // copy's claim is verified — never assert a notification that
+        // didn't happen.
+        await this.escalate(conversation.id, "question outside knowledge base");
+        escalated = true;
+        reply = this.deps.knowledge.fallback();
+      }
+    } else if (intent.intent === "cancel_appointment") {
+      // The receptionist cannot execute cancellations in-chat; route the
+      // request to staff (real handoff) instead of promising a flow that does
+      // not exist. Customers can also self-serve via the explicit "Cancel
+      // appointment" action on their booking confirmation.
+      await this.escalate(conversation.id, "customer asked to cancel an appointment");
+      escalated = true;
+      reply = "Understood — I can't cancel it myself, so I've flagged this for the team. They'll see it in their inbox, complete the cancellation and follow up with you.";
     } else if (intent.intent === "request_human") {
       await this.escalate(conversation.id, "customer requested human");
+      escalated = true;
       reply = "Understood — I'm marking this conversation for a human colleague.";
     } else {
       const replies: Record<string, string> = {
         book_appointment: "I can help you book an appointment. Could you tell me the purpose and your preferred time?",
-        cancel_appointment: "I can help cancel an appointment. Please confirm which appointment.",
         reschedule_appointment: "I can help reschedule. What new time works for you?",
         greeting: "Hello! How can I help you today?",
         chitchat: "I'm here to help with bookings and business questions.",
@@ -201,7 +224,7 @@ export class ConversationService {
     }
 
     await this.recordAssistantMessage(conversation.id, reply);
-    return { reply, intent: intent.intent, extractionComplete };
+    return { reply, intent: intent.intent, extractionComplete, escalated };
   }
 
   /** Escalation (FR-12): mark conversation for human review, never silently dropped. */

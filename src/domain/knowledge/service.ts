@@ -52,8 +52,13 @@ export class KnowledgeService {
     return { answer: null, matched: false };
   }
 
+  /**
+   * Unanswered-question copy. Callers MUST have escalated the conversation
+   * first (the frontend/console handoff) — the claim "flagged for the team"
+   * then describes a real, verified handoff visible in the admin console.
+   */
   fallback(): string {
-    return "I don't have that information right now — I've noted your question for a colleague who can help.";
+    return "I don't have that information right now — I've flagged your question for the team, who will see it and follow up with you.";
   }
 }
 

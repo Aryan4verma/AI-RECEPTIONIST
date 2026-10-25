@@ -30,7 +30,8 @@
 | `OP-03 POST /conversations/{id}/audio` | FR-8 | conversation token | multipart audio → `{transcript, reply, …same as OP-02}` | 200 / 400 UNSUPPORTED_MEDIA_TYPE, 400 AUDIO_TOO_LARGE, 422 STT_FAILED, 404, 429 | ≤ 10 MB, ≤ 60 s, allowed: wav/webm/ogg/m4a (validated by magic bytes) |
 | `OP-04 POST /conversations/{id}/transcript-corrections` | FR-8 | conversation token | `{messageId, correctedText}` → `{message}` | 200 / 404, 400 | only transcript-type messages |
 | `OP-05 POST /conversations/{id}/confirm` | FR-5/7 | conversation token | `{offerToken, decision:'accept'\|'decline'}` → `{booking{state}, appointment?{id,start,end,status}}` | 200 / 404, 409 OFFER_EXPIRED, 409 SLOT_TAKEN (→ new offer), 503 CALENDAR_UNAVAILABLE | token single-use; retry-safe (same token → same result) |
-| `OP-06 POST /conversations/{id}/cancel` | FR-1/11 | conversation token | `{}` → `{conversationState:'ended'}` (+ cancels pending booking) | 200 / 404 | idempotent |
+| `OP-06 POST /conversations/{id}/cancel` | FR-1/11 | conversation token | `{}` → `{conversationState:'ended'}` (**explicit customer booking cancellation** — cancels a pending OR confirmed booking + calendar event; the ONLY public route that may cancel an appointment) | 200 / 404, 503 CALENDAR_UNAVAILABLE (uncertain outcomes stay unresolved + escalated) | idempotent |
+| `OP-06b POST /conversations/{id}/end` | FR-1 | conversation token | `{}` → `{conversationState:'ended'}` (ends the conversation ONLY — a booking in ANY state survives untouched; an escalated handoff stays escalated for staff) | 200 / 404 | idempotent |
 | `OP-07 GET /conversations/{id}` | FR-1 | conversation token | → `{status, booking state, appointment summary (no PII beyond own), escalated}` | 200 / 404 | — |
 
 ### Admin — `Authorization: Bearer <Supabase JWT>` + `app_admins` membership

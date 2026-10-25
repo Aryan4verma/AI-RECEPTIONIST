@@ -53,7 +53,7 @@ export function registerConversationRoutes(app: FastifyInstance, deps: Conversat
       intent: turn.intent,
       extractionComplete: turn.extractionComplete,
       offer: turn.offer,
-      conversationState: turn.intent === "request_human" ? "escalated" : conversation.status,
+      conversationState: turn.escalated ? "escalated" : conversation.status,
     };
   });
 
@@ -78,11 +78,24 @@ export function registerConversationRoutes(app: FastifyInstance, deps: Conversat
     return result;
   });
 
+  // Explicit customer booking cancellation — the ONLY public route that may
+  // cancel an appointment. Ending a conversation (below) must never touch a
+  // booking; the frontend maps this route to a deliberate "Cancel appointment"
+  // action, never to closing the session.
   app.post("/api/v1/conversations/:id/cancel", async (request) => {
     const conversation = await requireConversation(request);
     // Booking-cancellation failures are consequential — they propagate to the
     // error envelope instead of being silently suppressed (quality correction 3).
     await deps.bookingService.cancel(conversation.id);
+    await deps.conversationService.end(conversation);
+    return { conversationState: "ended" };
+  });
+
+  // End the conversation ONLY. Never cancels, modifies or reconciles a booking
+  // in any state (a CONFIRMED appointment survives; an UNRESOLVED booking keeps
+  // recovering independently of conversation status).
+  app.post("/api/v1/conversations/:id/end", async (request) => {
+    const conversation = await requireConversation(request);
     await deps.conversationService.end(conversation);
     return { conversationState: "ended" };
   });

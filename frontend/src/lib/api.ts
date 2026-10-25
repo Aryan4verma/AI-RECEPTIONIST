@@ -109,8 +109,15 @@ export const api = {
       token,
     }),
 
+  // EXPLICIT customer booking cancellation — the only call that may cancel an
+  // appointment. Wire to a deliberate "Cancel appointment" action, never to
+  // closing the session (use endConversation for that).
   cancel: (id: string, token: string) =>
     request<{ conversationState: string }>("POST", `/api/v1/conversations/${id}/cancel`, { token, body: {} }),
+
+  // End the conversation only — a confirmed appointment always survives this.
+  endConversation: (id: string, token: string) =>
+    request<{ conversationState: string }>("POST", `/api/v1/conversations/${id}/end`, { token, body: {} }),
 
   status: (id: string, token: string) =>
     request<StatusResult>("GET", `/api/v1/conversations/${id}`, { token }),
