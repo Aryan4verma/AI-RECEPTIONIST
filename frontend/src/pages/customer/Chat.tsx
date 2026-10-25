@@ -51,6 +51,9 @@ function OfferSlip({
 }) {
   const { offer: o } = pending;
   const [left, setLeft] = useState(() => Math.max(0, new Date(o.expiresAt).getTime() - Date.now()));
+  // Hold duration captured at mount — the progress bar shows elapsed share of
+  // the hold, which stays honest regardless of the configured TTL.
+  const [total] = useState(left);
 
   useEffect(() => {
     const iv = setInterval(() => setLeft(Math.max(0, new Date(o.expiresAt).getTime() - Date.now())), 1000);
@@ -60,6 +63,7 @@ function OfferSlip({
   const mins = Math.floor(left / 60000);
   const secs = Math.floor((left % 60000) / 1000);
   const expired = left <= 0;
+  const held = total > 0 ? Math.min(1, Math.max(0, 1 - left / total)) : 1;
 
   if (pending.outcome) {
     const ok = pending.outcome === "CONFIRMED";
@@ -107,8 +111,11 @@ function OfferSlip({
         <span className="micro flex items-center gap-1.5">
           <IconCalendar className="size-3.5" /> Proposed appointment
         </span>
-        <span className={`micro tabular ${expired || mins < 3 ? "text-danger-fg" : "text-pine-700"}`}>
-          {expired ? "expired" : `holds ${mins}:${String(secs).padStart(2, "0")}`}
+        <span
+          className={`font-display text-[15px] tabular ${expired || mins < 3 ? "text-danger-fg" : "text-pine-700"}`}
+          aria-label={expired ? "Offer expired" : `Offer holds for ${mins} minutes ${secs} seconds`}
+        >
+          {expired ? "expired" : `${mins}:${String(secs).padStart(2, "0")}`}
         </span>
       </div>
       <div className="px-5 pb-5 pt-3">
@@ -116,6 +123,12 @@ function OfferSlip({
         <p className="mt-1 text-sm text-ink-2">
           {o.durationMinutes} minutes · {o.timezone}
         </p>
+        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-canvas-deep" role="presentation">
+          <div
+            className={`h-full rounded-full transition-[width] duration-1000 ease-linear ${expired ? "bg-danger-fg/50" : "bg-pine-600"}`}
+            style={{ width: `${expired ? 100 : held * 100}%` }}
+          />
+        </div>
         <div className="mt-4 flex gap-2">
           <Button className="flex-1" disabled={expired || pending.busy} loading={pending.busy && pending.decided === "accept"} onClick={() => onConfirm("accept")}>
             Confirm booking
@@ -417,7 +430,10 @@ export default function Chat() {
                 </Button>
               </>
             )}
-            <a href="/admin" className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-ink-2 underline-offset-2 hover:text-pine-700 hover:underline">
+            <a
+              href="/admin"
+              className="hidden items-center gap-1.5 rounded-full border border-line-strong bg-surface px-3.5 py-1.5 text-xs font-semibold text-ink-2 transition-colors hover:border-ink-3 hover:text-ink sm:inline-flex"
+            >
               Staff sign-in
             </a>
           </div>
@@ -425,7 +441,7 @@ export default function Chat() {
       </header>
 
       {/* Landing — natural page flow */}
-      {phase.kind === "idle" && <Landing onStart={start} error={error} />}
+      {phase.kind === "idle" && <Landing onStart={() => start("text")} error={error} />}
 
       {phase.kind === "starting" && (
         <main className="flex flex-1 items-center justify-center">
@@ -504,14 +520,18 @@ export default function Chat() {
       {phase.kind === "chat" && !sessionEnded && (
         <div className="sticky bottom-0 border-t border-line bg-surface/90 backdrop-blur">
           <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-4 sm:px-6">
-            <div className="flex items-end gap-2">
+            <div
+              className={`flex items-end gap-1.5 rounded-[26px] border bg-raised py-1.5 pl-1.5 pr-1.5 transition-colors ${
+                recording ? "border-danger-fg/50" : "border-line-strong focus-within:border-pine-500 focus-within:ring-2 focus-within:ring-pine-600/15"
+              }`}
+            >
               <button
                 onClick={toggleRecording}
                 aria-label={recording ? "Stop recording" : "Record a voice message"}
                 aria-pressed={recording}
                 title={recording ? "Stop recording" : "Record a voice message (not a phone call)"}
-                className={`flex size-11 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                  recording ? "rec-pulse border-danger-fg bg-danger-fg text-white" : "border-line-strong bg-raised text-ink hover:border-pine-600 hover:text-pine-700"
+                className={`flex size-10 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                  recording ? "rec-pulse border-danger-fg bg-danger-fg text-white" : "border-transparent text-ink-2 hover:bg-pine-50 hover:text-pine-700"
                 }`}
               >
                 {recording ? (
@@ -520,7 +540,11 @@ export default function Chat() {
                   <IconMic className="size-5" />
                 )}
               </button>
+              <label className="sr-only" htmlFor="composer-input">
+                Type your message
+              </label>
               <textarea
+                id="composer-input"
                 ref={inputRef}
                 rows={1}
                 value={input}
@@ -532,13 +556,18 @@ export default function Chat() {
                     send(input);
                   }
                 }}
-                className="max-h-36 min-h-11 flex-1 resize-none rounded-xl border border-line-strong bg-raised px-4 py-3 text-sm text-ink placeholder:text-ink-3/70 focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-600/15"
+                className="max-h-36 min-h-10 flex-1 resize-none self-center bg-transparent px-2 py-2 text-sm text-ink placeholder:text-ink-3/70 focus:outline-none"
               />
-              <Button onClick={() => send(input)} disabled={!input.trim() || sending || recording} loading={sending} className="h-11 shrink-0" aria-label="Send message">
-                <IconArrowUp className="size-4" />
-              </Button>
+              <button
+                onClick={() => send(input)}
+                disabled={!input.trim() || sending || recording}
+                aria-label="Send message"
+                className="flex size-10 shrink-0 items-center justify-center rounded-full bg-pine-700 text-[#f4f1e8] shadow-card transition-all hover:bg-pine-800 disabled:opacity-30"
+              >
+                {sending ? <Spinner className="size-4" /> : <IconArrowUp className="size-4.5" />}
+              </button>
             </div>
-            <div className="mt-2 flex items-center justify-between">
+            <div className="mt-2 flex items-center justify-between px-1.5">
               <p className="text-[11px] text-ink-3">
                 {recording ? "Recording — tap the square to send" : "Enter to send · Shift+Enter for a new line"}
               </p>
@@ -586,145 +615,147 @@ function Mark({ className = "size-9" }: { className?: string }) {
   );
 }
 
-function Landing({ onStart, error }: { onStart: (c: "text" | "voice") => void; error: string | null }) {
+function Landing({ onStart, error }: { onStart: () => void; error: string | null }) {
   return (
     <>
       <main className="paper-texture">
-        {/* Hero — asymmetric editorial split */}
-        <div className="mx-auto grid w-full max-w-5xl gap-12 px-5 pb-16 pt-14 sm:px-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-16 lg:pt-20">
+        {/* Hero — asymmetric editorial split: copy left, photographic vignette right */}
+        <div className="mx-auto grid w-full max-w-6xl items-center gap-12 px-5 pb-10 pt-10 sm:px-8 lg:grid-cols-[1.02fr_0.98fr] lg:gap-16 lg:pb-12 lg:pt-12">
           <div>
             <p className="micro flex items-center gap-2 text-pine-700">
               <IconSparkle className="size-3.5" />
               The always-on front desk
             </p>
-            <h1 className="mt-5 font-display text-[2.6rem] font-medium leading-[1.08] tracking-[-0.01em] text-ink sm:text-6xl">
+            <h1 className="mt-5 font-display text-[2.55rem] font-medium leading-[1.07] tracking-[-0.01em] text-ink sm:text-[3.4rem]">
               Every call answered.
               <br />
               <span className="font-display-italic font-normal text-pine-700">Every visitor greeted.</span>
             </h1>
             <p className="mt-5 max-w-md text-[15.5px] leading-relaxed text-ink-2">
-              Cleardesk is your AI receptionist — it answers questions from your own business knowledge, books and
-              changes appointments in your calendar, and hands over to a person the moment it should.
+              Cleardesk is your AI receptionist — it answers from your own business knowledge, books and changes
+              appointments in your calendar, and hands over to a person the moment it should.
             </p>
 
             {error && <div className="mt-6 w-full max-w-sm"><ErrorNote>{error}</ErrorNote></div>}
 
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-              <Button size="lg" onClick={() => onStart("text")} className="sm:px-6">
-                <IconChat className="size-4.5" />
+            <div className="mt-8 flex flex-col items-start gap-4">
+              <Button size="lg" onClick={onStart}>
                 Start chatting
+                <span className="flex size-6 items-center justify-center rounded-full bg-white/15" aria-hidden="true">
+                  <IconArrowRight className="size-4" />
+                </span>
               </Button>
-              <Button size="lg" variant="secondary" onClick={() => onStart("voice")} className="sm:px-6">
-                <IconMic className="size-4.5" />
-                Send a voice message
-              </Button>
-            </div>
-            <div className="mt-4.5 flex flex-wrap items-center gap-x-5 gap-y-2">
               <a
                 href="/call"
-                className="group inline-flex items-center gap-2 rounded-lg text-sm font-semibold text-pine-700 underline-offset-4 hover:underline"
+                className="group inline-flex items-center gap-2 text-[13.5px] font-medium text-ink underline-offset-4 hover:text-pine-700 hover:underline"
               >
-                <span className="flex size-8 items-center justify-center rounded-full border border-pine-200 bg-pine-50 transition-colors group-hover:bg-pine-100">
-                  <IconPhone className="size-4" />
-                </span>
-                Call the AI receptionist
-                <IconArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+                <IconPhone className="size-4 text-pine-600" />
+                Prefer to talk? Call the AI receptionist in your browser
+                <IconArrowRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
               </a>
-              <span className="hidden h-4 w-px bg-line-strong sm:block" aria-hidden="true" />
-              <p className="text-xs text-ink-3">Voice messages and calls are recordings &amp; speech — not phone calls.</p>
             </div>
           </div>
 
-          {/* Product vignette — a composed preview, clearly labeled */}
+          {/* Photographic vignette — a composed product preview, clearly labeled */}
           <div className="relative hidden lg:block" aria-hidden="true">
-            <div className="absolute -top-6 right-4 z-10 rotate-1">
-              <div className="w-64 rounded-card border border-line bg-surface p-4 shadow-slip">
-                <p className="micro flex items-center gap-1.5 text-pine-700">
-                  <IconCalendar className="size-3.5" /> Proposed appointment
-                </p>
-                <p className="mt-2 font-display text-[15px] leading-snug text-ink">Friday, 14 November · 10:00</p>
-                <p className="mt-0.5 text-xs text-ink-2">45 minutes · Europe/Berlin</p>
-                <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-canvas-deep">
-                  <div className="h-full w-2/3 rounded-full bg-pine-600" />
-                </div>
-                <p className="mt-1.5 text-[10.5px] font-medium tabular text-ink-3">holds 9:47</p>
-              </div>
+            <div className="relative h-[430px] overflow-hidden rounded-[18px] bg-gradient-to-br from-pine-200 via-canvas-deep to-brass-300/50 shadow-pop">
+              <img
+                src="https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=1200&q=80"
+                alt=""
+                loading="lazy"
+                decoding="async"
+                className="h-full w-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-pine-950/35 via-transparent to-transparent" />
             </div>
-            <div className="relative -rotate-1 rounded-card border border-line bg-surface p-5 shadow-card">
-              <p className="micro">Preview · example conversation</p>
-              <div className="mt-4 space-y-3">
-                <div className="flex items-start gap-2.5">
-                  <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-pine-50 font-display text-[13px] font-semibold text-pine-700">C</div>
-                  <div className="rounded-xl rounded-tl-sm border border-line bg-raised px-3.5 py-2 text-[13.5px] leading-relaxed text-ink">
-                    Good morning — how can I help you today?
-                  </div>
-                </div>
-                <div className="flex justify-end">
-                  <div className="rounded-xl rounded-tr-sm bg-pine-700 px-3.5 py-2 text-[13.5px] leading-relaxed text-[#f4f1e8]">
-                    I'd like to book a consultation this week
-                  </div>
-                </div>
-                <div className="flex items-start gap-2.5">
-                  <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-pine-50 font-display text-[13px] font-semibold text-pine-700">C</div>
-                  <div className="rounded-xl rounded-tl-sm border border-line bg-raised px-3.5 py-2 text-[13.5px] leading-relaxed text-ink">
-                    Of course. I can offer Friday at 10:00 — shall I book it?
-                  </div>
+
+            {/* Floating cards — both anchored to the left edge, stacked */}
+            <div className="absolute -left-8 top-8 w-64 -rotate-1 rounded-card border border-line bg-surface p-4 shadow-slip">
+              <div className="flex items-start gap-2.5">
+                <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-pine-50 font-display text-[13px] font-semibold text-pine-700">C</div>
+                <div className="rounded-xl rounded-tl-sm border border-line bg-raised px-3.5 py-2 text-[13px] leading-relaxed text-ink">
+                  Good morning — how can I help you today?
                 </div>
               </div>
+              <div className="mt-2.5 flex justify-end pr-1">
+                <div className="rounded-xl rounded-tr-sm bg-pine-700 px-3.5 py-2 text-[13px] leading-relaxed text-[#f4f1e8]">
+                  I'd like to book a consultation this week
+                </div>
+              </div>
+              <p className="micro mt-2.5 pl-1 !text-[9.5px]">Preview · example conversation</p>
             </div>
-          </div>
-        </div>
 
-        {/* Feature band */}
-        <div className="border-t border-line bg-canvas-deep/50">
-          <div className="mx-auto grid w-full max-w-5xl gap-px overflow-hidden px-5 sm:grid-cols-3 sm:px-8">
-            {[
-              {
-                icon: <IconChat className="size-4.5" />,
-                title: "Grounded answers",
-                body: "Replies come from your business knowledge — hours, services, FAQs — never invented facts.",
-              },
-              {
-                icon: <IconCalendar className="size-4.5" />,
-                title: "Real bookings",
-                body: "Appointments are proposed, confirmed by you, and written to the calendar with a verifiable record.",
-              },
-              {
-                icon: <IconShield className="size-4.5" />,
-                title: "Private by default",
-                body: "Conversations aren't recorded unless you allow it, and a person is always one request away.",
-              },
-            ].map((f) => (
-              <div key={f.title} className="py-7 sm:px-6 sm:first:pl-0 sm:last:pr-0">
-                <div className="flex size-9 items-center justify-center rounded-lg border border-pine-200 bg-pine-50 text-pine-700">
-                  {f.icon}
-                </div>
-                <h3 className="mt-3.5 font-display text-[16.5px] text-ink">{f.title}</h3>
-                <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-2">{f.body}</p>
+            <div className="absolute -left-5 bottom-24 w-64 rotate-1 rounded-card border border-line bg-surface p-4 shadow-slip">
+              <p className="micro flex items-center gap-1.5 text-pine-700">
+                <IconCalendar className="size-3.5" /> Proposed appointment
+              </p>
+              <p className="mt-2 font-display text-[15px] leading-snug text-ink">Friday, 14 November · 10:00</p>
+              <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-pine-100">
+                <div className="h-full w-1/4 rounded-full bg-pine-600" />
               </div>
-            ))}
-          </div>
-        </div>
+              <p className="mt-1.5 text-[10.5px] font-medium tabular text-ink-3">holds 14:32</p>
+            </div>
 
-        {/* Disclosure band */}
-        <div className="border-t border-line">
-          <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-5 py-8 sm:px-8">
-            <p className="max-w-2xl text-xs leading-relaxed text-ink-3">
-              Handled by an AI receptionist. Conversations aren't recorded unless you allow it. For anything urgent, just
-              ask for a person. Illustrative previews on this page are examples — your receptionist answers with your
-              business's real, saved knowledge.
+            {/* Annotation with arrow toward the booking card */}
+            <p className="absolute -bottom-10 right-6 font-display-italic text-[13.5px] text-ink-2">
+              replies in seconds — even at 2am
             </p>
-            <IconWaveform className="size-6 text-line-strong" />
+            <svg className="absolute -bottom-7 right-24 h-8 w-16 rotate-[160deg] text-ink-3" viewBox="0 0 56 32" fill="none" aria-hidden="true">
+              <path d="M2 4c14 20 30 24 50 16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="0.5 4" />
+              <path d="M46 16.5 52 20l-4.5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </div>
+        </div>
+
+        {/* Feature cards */}
+        <div className="mx-auto grid w-full max-w-6xl gap-4 px-5 pb-8 sm:grid-cols-3 sm:px-8">
+          {[
+            {
+              icon: <IconChat className="size-4.5" />,
+              title: "Grounded answers",
+              body: "Replies come from your business knowledge — hours, services, FAQs — never invented facts.",
+            },
+            {
+              icon: <IconCalendar className="size-4.5" />,
+              title: "Real bookings",
+              body: "Appointments are proposed, confirmed by you, and written to the calendar with a verifiable record.",
+            },
+            {
+              icon: <IconShield className="size-4.5" />,
+              title: "Private by default",
+              body: "Conversations aren't recorded unless you allow it, and a person is always one request away.",
+            },
+          ].map((f) => (
+            <div
+              key={f.title}
+              className="group rounded-card border border-line bg-surface p-5 shadow-card transition-shadow hover:shadow-slip"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex size-10 items-center justify-center rounded-full bg-pine-100 text-pine-700">{f.icon}</div>
+                <span className="flex size-7 items-center justify-center rounded-full border border-line-strong text-ink-3 opacity-0 transition-opacity group-hover:opacity-100">
+                  <IconArrowRight className="size-3.5" />
+                </span>
+              </div>
+              <h3 className="mt-4 font-display text-[16.5px] text-ink">{f.title}</h3>
+              <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-2">{f.body}</p>
+            </div>
+          ))}
         </div>
       </main>
 
       <footer className="mt-auto border-t border-line bg-surface">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-5 py-7 sm:px-8">
-          <p className="font-display text-sm text-ink">Cleardesk</p>
-          <a href="/admin" className="text-xs font-medium text-ink-2 hover:text-pine-700">
-            Staff sign-in
-          </a>
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-5 py-5 sm:px-8">
+          <p className="max-w-2xl text-xs leading-relaxed text-ink-2">
+            Handled by an AI receptionist. Conversations aren't recorded unless you allow it — for anything urgent, just
+            ask for a person. Previews on this page are examples; your receptionist answers with your business's real,
+            saved knowledge.
+          </p>
+          <div className="flex items-center gap-4">
+            <IconWaveform className="size-6 text-line-strong" />
+            <a href="/admin" className="text-xs font-semibold text-ink-2 hover:text-pine-700">
+              Staff sign-in
+            </a>
+          </div>
         </div>
       </footer>
     </>

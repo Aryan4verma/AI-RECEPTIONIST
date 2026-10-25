@@ -20,13 +20,23 @@ mic → silence detection (end of turn) → POST /api/v1/conversations/{id}/audi
 - **Honest turn-taking:** end of turn = ~1.2 s of silence after real speech;
   a 25 s ceiling forces an end-of-turn on long monologues.
 - **Unavailability is a first-class state.** If the speech sidecar is RAM-gated
-  (`STT_FAILED` / `RESOURCE_LIMIT`), the call shows *Voice unavailable* and
-  offers **Continue in chat** — the same conversation token carries over, so
+  (`STT_FAILED` / `RESOURCE_LIMIT`), the call shows *Voice unavailable* with an
+  honest explanation (the speech service pauses itself to protect the machine
+  when memory is tight) and two real actions: **Try voice again** (a manual
+  retry — the gate is often transient as memory frees up; it never loops on its
+  own) and **Continue in chat** — the same conversation token carries over, so
   nothing the customer said is lost.
+- **Speaker toggle is a real control, not decoration.** Turning it off switches
+  the call to silent mode: replies appear in the live transcript only, TTS is
+  never invoked, and the recorder is never paused (there is no speaker audio to
+  guard against). Useful when the customer must stay quiet.
+- **Prefer to type?** appears mid-call under the transcript and hands the SAME
+  conversation to the chat screen at any moment — not only after a failure.
 - Bookings proposed mid-call appear as a card; confirmation stays a deliberate
   action in chat (voice alone never confirms an appointment).
 - The engine lifecycle (repeatable turns, barge-in, feedback guard, mid-turn
-  end invalidation, STT degradation) is unit-tested in `frontend/src/call/engine.test.ts`.
+  end invalidation, STT degradation with retry, silent mode) is unit-tested in
+  `frontend/src/call/engine.test.ts`.
 
 ## Running it from a phone (or any other device)
 

@@ -259,4 +259,49 @@ describe("CallEngine", () => {
     expect(engine.getState().status).toBe("ended"); // not overwritten by the stale turn
     expect(engine.getState().transcript.every((x) => x.role !== "assistant" || x.text === "Good morning!")).toBe(true);
   });
+
+  it("silent mode (speaker off): replies are never spoken, recorder never pauses", async () => {
+    const { w, deps } = makeWorld();
+    const { engine } = await startCall(deps);
+    engine.setSpeaker(false);
+    await flush();
+    // Greeting TTS was cancelled → straight to listening, no speak pending.
+    expect(engine.getState().status).toBe("listening");
+    expect(w.speakDone).toBeNull();
+
+    const t = { now: 0 };
+    w.levels = [0.05];
+    for (let i = 0; i < 5; i++) engine.tick((t.now += 90));
+    w.levels = [0];
+    for (let i = 0; i < 14; i++) engine.tick((t.now += 90));
+    await flush();
+    await flush();
+    // Reply arrived as transcript but was never spoken (paused stayed at the
+    // single greeting pause; no new speak promise was created).
+    expect(engine.getState().status).toBe("listening");
+    expect(w.recorder.paused).toBe(1);
+    expect(w.speakDone).toBeNull();
+    expect(engine.getState().transcript.some((x) => x.text === "We are open Monday to Friday.")).toBe(true);
+    await engine.end();
+  });
+
+  it("retryVoice from STT-unavailable resumes listening with the note cleared", async () => {
+    const { w, deps } = makeWorld({ sttCode: "RESOURCE_LIMIT" });
+    const { engine } = await startCall(deps);
+    const t = { now: 0 };
+    await finishSpeech(w, engine, t);
+    w.levels = [0.05];
+    for (let i = 0; i < 5; i++) engine.tick((t.now += 90));
+    w.levels = [0];
+    for (let i = 0; i < 14; i++) engine.tick((t.now += 90));
+    await flush();
+    await flush();
+    await flush();
+    expect(engine.getState().status).toBe("unavailable");
+
+    engine.retryVoice();
+    expect(engine.getState().status).toBe("listening");
+    expect(engine.getState().note).toBeNull();
+    await engine.end();
+  });
 });

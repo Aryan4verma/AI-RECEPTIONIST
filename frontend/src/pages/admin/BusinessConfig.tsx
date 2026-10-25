@@ -96,8 +96,8 @@ export default function BusinessConfig() {
             role="tab"
             aria-selected={cat === c.id}
             onClick={() => setCat(c.id)}
-            className={`rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors ${
-              cat === c.id ? "bg-pine-600 text-white" : "border border-line-strong bg-surface text-ink-2 hover:border-ink-3"
+            className={`rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
+              cat === c.id ? "bg-pine-700 text-[#f4f1e8] shadow-card" : "border border-line-strong bg-surface text-ink-2 hover:border-ink-3"
             }`}
           >
             {c.label}

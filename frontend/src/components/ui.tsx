@@ -9,12 +9,12 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 export function Button({ variant = "primary", size = "md", loading, className = "", children, disabled, ...rest }: ButtonProps) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-150 select-none " +
+    "inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all duration-150 select-none " +
     "disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-px";
   const sizes = {
-    sm: "px-3 py-1.5 text-[13px]",
-    md: "px-4 py-2.5 text-sm",
-    lg: "px-5 py-3 text-[15px]",
+    sm: "px-3.5 py-1.5 text-[13px]",
+    md: "px-4.5 py-2.5 text-sm",
+    lg: "px-6 py-3 text-[15px]",
   }[size];
   const variants = {
     primary: "bg-pine-700 text-[#f4f1e8] shadow-card hover:bg-pine-800 hover:shadow-slip",

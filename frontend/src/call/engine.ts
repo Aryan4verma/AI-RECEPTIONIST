@@ -51,6 +51,8 @@ export interface CallState {
   note: string | null; // human explanation for unavailable/error
   offer: CallOffer | null;
   session: { id: string; token: string } | null;
+  /** AI voice output on (default). Off = silent receptionist, typed transcript only. */
+  speakerOn: boolean;
 }
 
 /* ---- Injectable adapters (real browser impls in useCallEngine.ts) ---- */
@@ -111,6 +113,7 @@ export class CallEngine {
     note: null,
     offer: null,
     session: null,
+    speakerOn: true,
   };
   private nextId = 1;
   private mic: Awaited<ReturnType<CallEngineDeps["openMic"]>> | null = null;
@@ -205,6 +208,29 @@ export class CallEngine {
     this.set({ muted: next });
   }
 
+  /** Silent-mode: AI replies appear as transcript only, never spoken. */
+  setSpeaker(on: boolean): void {
+    this.set({ speakerOn: on });
+    if (!on && this.state.status === "speaking") {
+      this.deps.speech.cancel(); // resolves speak() → listen() resumes
+    }
+  }
+
+  /**
+   * Manual retry from unavailable/error. The STT sidecar is RAM-gated, so
+   * unavailability is often transient — the customer (or a freed machine)
+   * may make a retry succeed. Never loops automatically.
+   */
+  retryVoice(): void {
+    if (this.state.status !== "unavailable" && this.state.status !== "error") return;
+    if (this.mic) {
+      this.set({ note: null });
+      this.listen();
+    } else {
+      void this.start();
+    }
+  }
+
   async end(): Promise<void> {
     this.stopped = true;
     this.listenEpoch++;
@@ -227,9 +253,14 @@ export class CallEngine {
     this.mic = null;
   }
 
-  /** Speak with the recorder paused; resume listening when done (or barged in). */
+  /** Speak with the recorder paused; resume listening when done (or barged in).
+   *  Silent mode skips TTS entirely — no pause needed without speaker audio. */
   private async speakThenListen(text: string): Promise<void> {
     if (this.stopped) return;
+    if (!this.state.speakerOn) {
+      this.listen();
+      return;
+    }
     this.set({ status: "speaking" });
     this.mic?.recorder.pause();
     const epoch = this.listenEpoch;
@@ -313,7 +344,10 @@ export class CallEngine {
       if (STT_DOWN_CODES.has(code)) {
         this.set({
           status: "unavailable",
-          note: "Voice recognition is unavailable on the receptionist right now. Your call can continue in text chat.",
+          note:
+            "Voice recognition couldn't start on the receptionist right now — its speech service pauses " +
+            "itself to protect the machine when memory is tight. Your call and booking history are saved; " +
+            "you can retry in a moment or continue in text chat.",
         });
       } else {
         this.set({ status: "error", note: "The receptionist couldn't be reached. Please try again." });

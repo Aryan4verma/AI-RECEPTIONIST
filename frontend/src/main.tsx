@@ -41,7 +41,7 @@ export default function App() {
         <Route
           path="/call"
           element={
-            <Suspense fallback={<div className="flex min-h-dvh items-center justify-center bg-pine-950 text-[#f4f1e8]/70">Opening the call screen…</div>}>
+            <Suspense fallback={<div className="flex min-h-dvh items-center justify-center bg-canvas text-ink-3">Opening the call screen…</div>}>
               <Call />
             </Suspense>
           }

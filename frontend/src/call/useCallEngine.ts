@@ -123,6 +123,9 @@ export function useCallEngine() {
   }, [engine]);
 
   const start = useCallback(() => {
+    // engine.start() flips to "connecting" synchronously — surface it at once
+    // so the stage reflects the call beginning while permission is pending.
+    setState({ ...engine.getState() });
     void engine.start().then(() => setState({ ...engine.getState() }));
   }, [engine]);
   const end = useCallback(() => {
@@ -132,12 +135,22 @@ export function useCallEngine() {
     engine.toggleMute();
     setState({ ...engine.getState() });
   }, [engine]);
+  const setSpeaker = useCallback((on: boolean) => {
+    engine.setSpeaker(on);
+    setState({ ...engine.getState() });
+  }, [engine]);
+  const retryVoice = useCallback(() => {
+    engine.retryVoice();
+    setState({ ...engine.getState() });
+  }, [engine]);
 
   return {
     state: state ?? engine.getState(),
     start,
     end,
     toggleMute,
+    setSpeaker,
+    retryVoice,
     isSecureContext: typeof window === "undefined" ? true : window.isSecureContext,
   };
 }

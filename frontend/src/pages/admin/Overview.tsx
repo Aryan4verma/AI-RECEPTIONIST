@@ -2,14 +2,15 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { adminApi, type AppointmentRow, type ConversationRow, type Customer } from "../../lib/admin";
-import { Badge, Card, CardHead, ErrorNote, Spinner, StatTile } from "../../components/ui";
+import { Badge, Card, CardHead, ErrorNote, Spinner } from "../../components/ui";
 import { formatDate, formatDateTime, relativeTime, STATUS_LABELS, statusTone } from "../../lib/format";
 import { ApiError } from "../../lib/api";
-import { IconAlert, IconCalendar, IconChip, IconMessages } from "../../components/icons";
+import { IconAlert, IconArrowRight, IconCalendar, IconChat, IconChip, IconMessages, IconUsers } from "../../components/icons";
 
 /**
  * Operational dashboard — every number is computed from the real admin lists
- * (no invented metrics). Empty states are accurate, not decorated.
+ * (no invented metrics). Empty states are accurate, not decorated. The hero
+ * quote is the receptionist's REAL configured greeting, not placeholder copy.
  */
 export default function Overview() {
   const { user } = useAdminAuth();
@@ -21,6 +22,7 @@ export default function Overview() {
         conversations: ConversationRow[];
         appointments: AppointmentRow[];
         customers: Customer[];
+        greeting: string | null;
         ai: { reachable: boolean; models: number; activeProvider: string | null };
       }
   >({ state: "loading" });
@@ -33,14 +35,19 @@ export default function Overview() {
       adminApi.customers(user.token),
       adminApi.providers(user.token).catch(() => ({ providers: [] as { isActive: boolean; displayName: string; modelId: string | null }[] })),
       adminApi.localModels(user.token).catch(() => ({ ollama: { reachable: false, models: [] as unknown[] } })),
+      adminApi.config(user.token, "business_info").catch(() => null),
     ])
-      .then(([c, a, cu, p, m]) => {
+      .then(([c, a, cu, p, m, cfg]) => {
         const active = (p.providers ?? []).find((x) => x.isActive);
+        const greeting = typeof (cfg?.content as { greeting?: unknown } | undefined)?.greeting === "string"
+          ? ((cfg?.content as { greeting: string }).greeting)
+          : null;
         setLoad({
           state: "ok",
           conversations: c.conversations,
           appointments: a.appointments,
           customers: cu.customers,
+          greeting,
           ai: {
             reachable: m.ollama?.reachable ?? false,
             models: m.ollama?.models?.length ?? 0,
@@ -71,36 +78,79 @@ export default function Overview() {
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <div>
+      {/* Hero — greeting line + photographic card carrying the REAL configured greeting */}
+      <div className="mb-6 grid gap-5 lg:grid-cols-[1fr_340px]">
+        <div className="flex flex-col justify-center">
           <h1 className="font-display text-[26px] leading-tight text-ink">The front desk today</h1>
-          <p className="mt-1 text-sm text-ink-2">Everything below is live from your receptionist service.</p>
+          <p className="mt-1 text-sm text-ink-2">
+            {formatDate(new Date().toISOString())} — everything below is live from your receptionist service.
+          </p>
+          <p className="mt-3 max-w-md border-l-2 border-pine-300 pl-3.5 text-[13px] leading-relaxed text-ink-2">
+            {load.greeting ? (
+              <>
+                <span className="font-display-italic text-[14.5px] text-ink">“{load.greeting}”</span>
+                <span className="mt-1 block text-[11.5px] text-ink-3">
+                  Your receptionist's current greeting — edit it in Business settings.
+                </span>
+              </>
+            ) : (
+              <span className="text-ink-3">
+                No greeting configured yet — set one in Business settings so every conversation opens warmly.
+              </span>
+            )}
+          </p>
         </div>
-        <p className="text-[11.5px] text-ink-3">{formatDate(new Date().toISOString())}</p>
+        <div className="relative h-36 overflow-hidden rounded-card shadow-card" aria-hidden="true">
+          <img
+            src="https://images.unsplash.com/photo-1613490493576-10f784a887da?auto=format&fit=crop&w=800&q=70"
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-pine-950/55 via-pine-950/10 to-transparent" />
+          <p className="absolute bottom-3 left-4 right-4 font-display-italic text-[13px] leading-snug text-[#f4f1e8]">
+            Every conversation, appointment and handoff in one place.
+          </p>
+        </div>
       </div>
 
-      {/* Stat tiles */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Link to="/admin/appointments" className="rounded-tile border border-line bg-surface px-4 py-3.5 shadow-card transition-colors hover:border-pine-400">
-          <p className="micro">Upcoming appointments</p>
-          <p className="tabular mt-1.5 font-display text-[28px] leading-none text-pine-700">{upcoming.length}</p>
-          <p className="mt-1.5 text-[11.5px] text-ink-3">{upcoming[0] ? `Next ${relativeTime(upcoming[0].scheduled_start)}` : "confirmed, ahead of now"}</p>
-        </Link>
-        <Link to="/admin/conversations" className="rounded-tile border border-line bg-surface px-4 py-3.5 shadow-card transition-colors hover:border-pine-400">
-          <p className="micro">Open conversations</p>
-          <p className="tabular mt-1.5 font-display text-[28px] leading-none text-ink">{open.length}</p>
-          <p className="mt-1.5 text-[11.5px] text-ink-3">{load.conversations.length} all-time</p>
-        </Link>
-        <Link to="/admin/conversations" className="rounded-tile border border-line bg-surface px-4 py-3.5 shadow-card transition-colors hover:border-pine-400">
-          <p className="micro">Waiting for a person</p>
-          <p className={`tabular mt-1.5 font-display text-[28px] leading-none ${escalated.length > 0 ? "text-warn-fg" : "text-ink"}`}>{escalated.length}</p>
-          <p className="mt-1.5 text-[11.5px] text-ink-3">{escalated.length > 0 ? "Needs follow-up" : "Nothing escalated"}</p>
-        </Link>
-        <Link to="/admin/customers" className="rounded-tile border border-line bg-surface px-4 py-3.5 shadow-card transition-colors hover:border-pine-400">
-          <p className="micro">Customers</p>
-          <p className="tabular mt-1.5 font-display text-[28px] leading-none text-ink">{load.customers.length}</p>
-          <p className="mt-1.5 text-[11.5px] text-ink-3">On file</p>
-        </Link>
+      {/* Stat cards — tinted icon tiles, serif numbers, circular arrow */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard
+          to="/admin/appointments"
+          icon={<IconCalendar className="size-4.5" />}
+          tileClass="bg-pine-100 text-pine-700"
+          value={upcoming.length}
+          label="Upcoming appointments"
+          hint={upcoming[0] ? `Next ${relativeTime(upcoming[0].scheduled_start)}` : "Confirmed, ahead of now"}
+          accent
+        />
+        <StatCard
+          to="/admin/conversations"
+          icon={<IconChat className="size-4.5" />}
+          tileClass="bg-brass-300/30 text-brass-600"
+          value={open.length}
+          label="Open conversations"
+          hint={`${load.conversations.length} all-time`}
+        />
+        <StatCard
+          to="/admin/conversations"
+          icon={<IconAlert className="size-4.5" />}
+          tileClass={escalated.length > 0 ? "bg-warn-bg text-warn-fg" : "bg-canvas-deep text-ink-3"}
+          value={escalated.length}
+          label="Waiting for a person"
+          hint={escalated.length > 0 ? "Needs follow-up" : "Nothing escalated"}
+          valueClass={escalated.length > 0 ? "text-warn-fg" : undefined}
+        />
+        <StatCard
+          to="/admin/customers"
+          icon={<IconUsers className="size-4.5" />}
+          tileClass="bg-pine-100 text-pine-700"
+          value={load.customers.length}
+          label="Customers"
+          hint="On file"
+        />
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
@@ -189,6 +239,45 @@ export default function Overview() {
         )}
       </Card>
     </>
+  );
+}
+
+function StatCard({
+  to,
+  icon,
+  tileClass,
+  value,
+  label,
+  hint,
+  accent,
+  valueClass,
+}: {
+  to: string;
+  icon: React.ReactNode;
+  tileClass: string;
+  value: number;
+  label: string;
+  hint: string;
+  accent?: boolean;
+  valueClass?: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className="group rounded-card border border-line bg-surface p-4.5 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-slip"
+    >
+      <div className="flex items-start justify-between">
+        <span className={`flex size-10 items-center justify-center rounded-full ${tileClass}`}>{icon}</span>
+        <span className="flex size-7 items-center justify-center rounded-full border border-line-strong text-ink-3 opacity-0 transition-opacity group-hover:opacity-100">
+          <IconArrowRight className="size-3.5" />
+        </span>
+      </div>
+      <p className={`mt-3.5 font-display text-[30px] leading-none tabular ${valueClass ?? (accent ? "text-pine-700" : "text-ink")}`}>
+        {value}
+      </p>
+      <p className="micro mt-2 !text-[9.5px]">{label}</p>
+      <p className="mt-1.5 text-[11.5px] text-ink-3">{hint}</p>
+    </Link>
   );
 }
 
