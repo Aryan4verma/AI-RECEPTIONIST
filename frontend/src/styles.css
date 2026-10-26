@@ -38,7 +38,7 @@
   --color-line-strong: #cfc9b8;
   --color-ink: #17251e;
   --color-ink-2: #4a544c;
-  --color-ink-3: #7d8478;
+  --color-ink-3: #687367;
 
   /* Brand: deep forest green — restrained accent, not a theme wash */
   --color-pine-50: #edf3ee;
@@ -87,6 +87,19 @@ body {
   margin: 0;
 }
 
+.photo-fallback {
+  color: rgb(36 82 61 / 0.24);
+  background: linear-gradient(135deg, #dce8de, #ece8de 72%, #e8d7b9);
+}
+
+h1, h2, h3 {
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
 *:focus-visible {
   outline: 2px solid var(--color-pine-500);
   outline-offset: 2px;
@@ -116,7 +129,7 @@ body {
   font-weight: 500;
   font-size: clamp(2.5rem, 4.6vw, 3.375rem);
   line-height: 1.06;
-  letter-spacing: -0.018em;
+  letter-spacing: -0.025em;
 }
 .type-display {
   font-family: var(--font-display);
@@ -130,17 +143,17 @@ body {
   font-family: var(--font-display);
   font-optical-sizing: auto;
   font-weight: 550;
-  font-size: 1.625rem;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
+  font-size: clamp(1.625rem, 2.5vw, 2rem);
+  line-height: 1.16;
+  letter-spacing: -0.025em;
 }
 .type-h2 {
   font-family: var(--font-display);
   font-optical-sizing: auto;
   font-weight: 550;
-  font-size: 1.0625rem;
+  font-size: 1.125rem;
   line-height: 1.3;
-  letter-spacing: -0.005em;
+  letter-spacing: -0.015em;
 }
 /* Serif metrics: aligned tabular figures for stats, timers, countdowns. */
 .type-metric {
@@ -171,6 +184,10 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--color-line-strong) transparent;
 }
+
+/* Keep the mobile section strip swipeable without a permanent scrollbar. */
+.nav-scroll { scrollbar-width: none; }
+.nav-scroll::-webkit-scrollbar { display: none; }
 
 @keyframes rise {
   from {

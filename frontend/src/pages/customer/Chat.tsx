@@ -568,11 +568,11 @@ export default function Chat() {
                 {sending ? <Spinner className="size-4" /> : <IconArrowUp className="size-4.5" />}
               </button>
             </div>
-            <div className="mt-2 flex items-center justify-between px-1.5">
-              <p className="text-[11px] text-ink-3">
+            <div className="mt-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-1.5">
+              <p className="text-xs leading-5 text-ink-3">
                 {recording ? "Recording — tap the square to send" : "Enter to send · Shift+Enter for a new line"}
               </p>
-              <label className="flex items-center gap-1.5 text-[11px] text-ink-2" title="Recording is off by default">
+              <label className="flex items-center gap-1.5 text-xs leading-5 text-ink-2" title="Recording is off by default">
                 <input type="checkbox" checked={consent} onChange={(e) => toggleConsent(e.target.checked)} className="accent-pine-600" />
                 Allow call recording
               </label>
@@ -621,7 +621,7 @@ function Landing({ onStart, error }: { onStart: () => void; error: string | null
     <>
       <main className="paper-texture">
         {/* Hero — asymmetric editorial split: copy left, photographic vignette right */}
-        <div className="mx-auto grid w-full max-w-6xl items-center gap-12 px-5 pb-10 pt-10 sm:px-8 lg:grid-cols-[1.02fr_0.98fr] lg:gap-16 lg:pb-12 lg:pt-12">
+        <div className="mx-auto grid w-full max-w-6xl items-center gap-12 px-5 pb-10 pt-10 sm:px-8 lg:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)] lg:gap-16 lg:pb-12 lg:pt-12">
           <div>
             <p className="micro flex items-center gap-2 text-pine-700">
               <IconSparkle className="size-3.5" />
@@ -651,7 +651,7 @@ function Landing({ onStart, error }: { onStart: () => void; error: string | null
                 className="group inline-flex items-center gap-2 text-[13.5px] font-medium text-ink underline-offset-4 hover:text-pine-700 hover:underline"
               >
                 <IconPhone className="size-4 text-pine-600" />
-                Prefer to talk? Call the AI receptionist in your browser
+                <span className="min-w-0">Prefer to talk? Call the AI receptionist in your browser</span>
                 <IconArrowRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
               </a>
             </div>
@@ -775,7 +775,7 @@ function ChatBubble({ message: m }: { message: Message }) {
           C
         </div>
       )}
-      <div className={`max-w-[78%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed ${mine ? "rounded-br-md bg-pine-700 text-[#f4f1e8]" : "rounded-bl-md border border-line bg-surface text-ink shadow-card"}`}>
+      <div className={`min-w-0 max-w-[78%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed [overflow-wrap:anywhere] ${mine ? "rounded-br-md bg-pine-700 text-[#f4f1e8]" : "rounded-bl-md border border-line bg-surface text-ink shadow-card"}`}>
         {m.transcript && mine && (
           <span className="micro mb-1 block !text-[#f4f1e8]/60" title="Transcribed from your voice">
             voice

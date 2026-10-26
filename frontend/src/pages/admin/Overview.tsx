@@ -85,7 +85,7 @@ export default function Overview() {
   return (
     <>
       {/* Hero — greeting line + photographic card carrying the REAL configured greeting */}
-      <div className="mb-6 grid gap-5 lg:grid-cols-[1fr_340px]">
+      <div className="mb-7 grid items-center gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="flex flex-col justify-center">
           <h1 className="type-h1 text-ink">The front desk today</h1>
           <p className="mt-1 text-sm text-ink-2">
@@ -115,7 +115,7 @@ export default function Overview() {
       </div>
 
       {/* Stat cards — tinted icon tiles, serif numbers, circular arrow */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatCard
           to="/admin/appointments"
           icon={<IconCalendar className="size-4.5" />}
@@ -152,9 +152,9 @@ export default function Overview() {
         />
       </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+      <div className="mt-5 grid items-start gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         {/* Upcoming appointments */}
-        <Card>
+        <Card className="xl:col-start-1 xl:row-start-1">
           <CardHead
             title="Next appointments"
             sub="Confirmed bookings, soonest first"
@@ -184,7 +184,7 @@ export default function Overview() {
         </Card>
 
         {/* Status column: receptionist + Google Calendar connection */}
-        <div className="space-y-5">
+        <div className="grid min-w-0 items-start gap-5 md:grid-cols-2 xl:col-start-2 xl:row-start-1 xl:row-span-2 xl:grid-cols-1">
           <Card>
             <CardHead title="Receptionist status" sub="Model & inference service" actions={<IconChip className="size-4 text-ink-3" />} />
             <div className="space-y-3.5 px-5 py-4">
@@ -209,10 +209,8 @@ export default function Overview() {
             setBusy={setGcalBusy}
           />
         </div>
-      </div>
-
       {/* Recent conversations */}
-      <Card className="mt-5">
+      <Card className="xl:col-start-1 xl:row-start-2">
         <CardHead
           title="Recent conversations"
           sub="Latest customer sessions across chat and calls"
@@ -247,6 +245,7 @@ export default function Overview() {
           </ul>
         )}
       </Card>
+      </div>
     </>
   );
 }
@@ -273,7 +272,7 @@ function StatCard({
   return (
     <Link
       to={to}
-      className="group rounded-card border border-line bg-surface p-4.5 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-slip"
+      className="group min-w-0 rounded-card border border-line bg-surface p-4 sm:p-5 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-slip"
     >
       <div className="flex items-start justify-between">
         <span className={`flex size-10 items-center justify-center rounded-full ${tileClass}`}>{icon}</span>
@@ -281,17 +280,17 @@ function StatCard({
           <IconArrowRight className="size-3.5" />
         </span>
       </div>
-      <p className={`type-metric mt-3.5 text-[30px] leading-none ${valueClass ?? (accent ? "text-pine-700" : "text-ink")}`}>
+      <p className={`type-metric mt-4 text-[34px] leading-none ${valueClass ?? (accent ? "text-pine-700" : "text-ink")}`}>
         {value}
       </p>
-      <p className="micro mt-2">{label}</p>
-      <p className="mt-1.5 text-[11.5px] text-ink-3">{hint}</p>
+      <p className="mt-2.5 text-[13px] font-semibold leading-snug text-ink-2">{label}</p>
+      <p className="mt-1 text-xs leading-relaxed text-ink-3">{hint}</p>
     </Link>
   );
 }
 
 function EmptyRow({ text }: { text: string }) {
-  return <p className="px-5 py-8 text-center text-[13px] leading-relaxed text-ink-3">{text}</p>;
+  return <p className="max-w-lg px-5 py-7 text-[13px] leading-relaxed text-ink-3">{text}</p>;
 }
 
 /**
@@ -312,14 +311,29 @@ function GoogleCalendarCard({
   setBusy: (b: boolean) => void;
   onChanged: () => void;
 }) {
+  const [copyNote, setCopyNote] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
+  useEffect(() => setCopyNote(""), [status?.calendarId]);
+  async function copyCalendarId() {
+    if (!status?.calendarId) return;
+    try {
+      await navigator.clipboard.writeText(status.calendarId);
+      setCopyNote("Calendar ID copied.");
+    } catch {
+      setCopyNote("Copy unavailable. Open the full ID below to select it.");
+    }
+  }
   async function connect() {
     if (!user) return;
     setBusy(true);
+    setActionError(null);
     try {
       const { authUrl } = await adminApi.googleConnect(user.token);
       window.open(authUrl, "_blank", "noopener");
       // The consent round trip takes the owner a while; refresh on return.
       window.addEventListener("focus", () => onChanged(), { once: true });
+    } catch (error) {
+      setActionError(error instanceof ApiError ? error.message : "Couldn't start the connection. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -327,20 +341,24 @@ function GoogleCalendarCard({
   async function disconnect() {
     if (!user) return;
     setBusy(true);
+    setActionError(null);
     try {
       await adminApi.googleDisconnect(user.token);
       onChanged();
+    } catch (error) {
+      setActionError(error instanceof ApiError ? error.message : "Couldn't disconnect. Please try again.");
     } finally {
       setBusy(false);
     }
   }
   return (
     <Card>
-      <CardHead title="Google Calendar" sub="Real bookings on your dedicated test calendar" />
-      <div className="space-y-3.5 px-5 py-4">
+      <CardHead title="Google Calendar" sub="Dedicated calendar integration" actions={status?.connected ? <Badge tone="success">Connected</Badge> : undefined} />
+      <div className="space-y-4 px-5 py-4">
+        {actionError && <ErrorNote>{actionError}</ErrorNote>}
         {!status ? (
           <p className="text-[13px] leading-relaxed text-ink-3">
-            Integration status unavailable — the Google environment variables are not set on the server.
+            Calendar status couldn't be loaded. Refresh the page to try again.
           </p>
         ) : !status.configured ? (
           <p className="text-[13px] leading-relaxed text-ink-3">
@@ -349,17 +367,32 @@ function GoogleCalendarCard({
           </p>
         ) : status.connected ? (
           <>
-            <StatusRow label="Connection" value="Connected" tone="ok" />
-            <StatusRow label="Calendar" value={status.calendarId ?? "—"} />
-            <StatusRow label="Access" value={status.accessRole ?? "—"} tone={["owner", "writer"].includes(status.accessRole ?? "") ? "ok" : "warn"} />
-            {status.lastError && <p className="text-[12px] leading-relaxed text-danger-fg">{status.lastError}</p>}
-            <p className="text-[11.5px] leading-relaxed text-ink-3">
-              Events are written only after a customer explicitly confirms, and real-calendar operations require the
-              owner's Q3 authorization.
-            </p>
-            <Button variant="danger" size="sm" onClick={() => void disconnect()} disabled={busy} loading={busy}>
-              Disconnect
-            </Button>
+            <dl className="space-y-3">
+              <div>
+                <dt className="mb-1.5 text-xs font-medium text-ink-3">Calendar ID</dt>
+                <dd className="m-0 min-w-0">
+                  <div className="flex min-w-0 items-center gap-2 rounded-lg border border-line bg-raised px-3 py-2">
+                    <code className="min-w-0 flex-1 truncate text-xs leading-5 text-ink-2" title={status.calendarId ?? undefined}>{status.calendarId ?? "—"}</code>
+                    <button type="button" onClick={() => void copyCalendarId()} disabled={!status.calendarId} aria-label="Copy calendar ID" className="shrink-0 rounded px-1 py-0.5 text-xs font-semibold text-pine-700 hover:bg-pine-50 disabled:opacity-40">Copy</button>
+                  </div>
+                  {status.calendarId && <details className="mt-2 text-xs text-ink-3">
+                    <summary className="w-fit cursor-pointer rounded font-medium hover:text-pine-700">View full ID</summary>
+                    <code className="mt-2 block select-all break-all rounded-lg bg-canvas p-2.5 text-xs leading-relaxed text-ink-2">{status.calendarId}</code>
+                  </details>}
+                  <p className="sr-only" role="status" aria-live="polite">{copyNote}</p>
+                  {copyNote && <p className="mt-2 text-xs leading-relaxed text-ink-2" aria-hidden="true">{copyNote}</p>}
+                </dd>
+              </div>
+              <div className="grid grid-cols-[80px_minmax(0,1fr)] gap-3 text-[13px] leading-5">
+                <dt className="text-ink-3">Access level</dt>
+                <dd className={`m-0 min-w-0 break-words font-semibold capitalize ${["owner", "writer"].includes(status.accessRole ?? "") ? "text-success-fg" : "text-warn-fg"}`}>{status.accessRole ?? "Unknown"}</dd>
+              </div>
+            </dl>
+            {status.lastError && <p className="break-words text-xs leading-relaxed text-danger-fg">{status.lastError}</p>}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
+              <p className="max-w-[24ch] flex-1 text-xs leading-relaxed text-ink-3">Real event writes require separate owner approval.</p>
+              <Button variant="danger" size="sm" onClick={() => void disconnect()} disabled={busy} loading={busy}>Disconnect</Button>
+            </div>
           </>
         ) : (
           <>
@@ -381,9 +414,9 @@ function GoogleCalendarCard({
 
 function StatusRow({ label, value, tone }: { label: string; value: string; tone?: "ok" | "warn" }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-[13px] text-ink-2">{label}</span>
-      <span className={`text-[13px] font-semibold ${tone === "ok" ? "text-success-fg" : tone === "warn" ? "text-warn-fg" : "text-ink"}`}>{value}</span>
+    <div className="grid min-w-0 grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] items-start gap-3 text-[13px] leading-5">
+      <span className="text-ink-3">{label}</span>
+      <span className={`min-w-0 text-right font-medium [overflow-wrap:anywhere] ${tone === "ok" ? "text-success-fg" : tone === "warn" ? "text-warn-fg" : "text-ink"}`}>{value}</span>
     </div>
   );
 }

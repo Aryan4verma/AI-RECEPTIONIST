@@ -237,7 +237,7 @@ export default function Call() {
                   {state.transcript.map((m) => (
                     <div
                       key={m.id}
-                      className={`max-w-[85%] text-[13.5px] leading-relaxed ${
+                      className={`min-w-0 max-w-[85%] text-[13.5px] leading-relaxed [overflow-wrap:anywhere] ${
                         m.role === "customer"
                           ? "self-end rounded-2xl rounded-br-sm bg-pine-700 px-3.5 py-2 text-[#f4f1e8]"
                           : m.role === "system"

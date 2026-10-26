@@ -44,8 +44,8 @@ export default function AdminLayout() {
   return (
     <div className="flex min-h-dvh bg-canvas">
       {/* Sidebar — cream, active item is a raised white pill */}
-      <aside className="sticky top-0 hidden h-dvh w-[268px] shrink-0 flex-col border-r border-line bg-canvas-deep/60 lg:flex">
-        <div className="flex items-center gap-3 px-5 pb-6 pt-6">
+      <aside className="pane-scroll sticky top-0 hidden h-dvh w-[244px] shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-line bg-canvas-deep/60 lg:flex">
+        <div className="flex shrink-0 items-center gap-3 px-5 pb-6 pt-6">
           <span className="flex size-9 items-center justify-center rounded-lg bg-pine-800 font-display text-lg font-semibold text-[#f4f1e8]">
             C
           </span>
@@ -82,7 +82,7 @@ export default function AdminLayout() {
         </nav>
 
         {/* Promo card — real product surface, links to the customer chat */}
-        <div className="p-3">
+        <div className="shrink-0 p-3">
           <a
             href="/"
             target="_blank"
@@ -103,7 +103,7 @@ export default function AdminLayout() {
           </a>
         </div>
 
-        <div className="border-t border-line px-5 py-4">
+        <div className="shrink-0 border-t border-line px-5 py-4">
           <p className="truncate text-[12px] font-medium text-ink-2" title={user?.email}>
             {user?.email}
           </p>
@@ -136,7 +136,7 @@ export default function AdminLayout() {
               </button>
             </div>
           </div>
-          <nav aria-label="Console sections" className="pane-scroll overflow-x-auto px-3 pb-2">
+          <nav aria-label="Console sections" className="nav-scroll overflow-x-auto px-3 pb-2">
             <div className="flex gap-1.5">
               {NAV.map((n) => (
                 <NavLink
@@ -170,7 +170,7 @@ export default function AdminLayout() {
           </a>
         </div>
 
-        <main className="mx-auto w-full max-w-6xl flex-1 px-5 py-8 sm:px-8">
+        <main className="mx-auto w-full min-w-0 max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8 xl:px-8">
           <Outlet />
         </main>
       </div>

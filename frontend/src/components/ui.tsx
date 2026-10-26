@@ -9,7 +9,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 export function Button({ variant = "primary", size = "md", loading, className = "", children, disabled, ...rest }: ButtonProps) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all duration-150 select-none " +
+    "inline-flex max-w-full items-center justify-center gap-2 rounded-full font-semibold leading-5 transition-all duration-150 select-none " +
     "disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-px";
   const sizes = {
     sm: "px-3.5 py-1.5 text-[13px]",
@@ -41,15 +41,15 @@ export function Spinner({ className = "size-5" }: { className?: string }) {
 
 /* ---------- Surfaces ---------- */
 export function Card({ className = "", children }: { className?: string; children: ReactNode }) {
-  return <section className={`rounded-card border border-line bg-surface shadow-card ${className}`}>{children}</section>;
+  return <section className={`min-w-0 rounded-card border border-line bg-surface shadow-card ${className}`}>{children}</section>;
 }
 
 export function CardHead({ title, sub, actions }: { title: string; sub?: string; actions?: ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <h2 className="type-h2 text-ink">{title}</h2>
-        {sub && <p className="mt-0.5 text-[12.5px] text-ink-3">{sub}</p>}
+        {sub && <p className="mt-1 text-xs leading-relaxed text-ink-3">{sub}</p>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>
@@ -76,7 +76,7 @@ export function Badge({ tone = "neutral", children }: { tone?: "success" | "warn
     neutral: "bg-canvas text-ink-2 border-line-strong",
     accent: "bg-pine-50 text-pine-700 border-pine-200",
   }[tone];
-  return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11.5px] font-semibold ${tones}`}>{children}</span>;
+  return <span className={`inline-flex max-w-full shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[11.5px] font-semibold leading-5 ${tones}`}>{children}</span>;
 }
 
 /* ---------- Field / Input ---------- */
@@ -130,7 +130,7 @@ export function ErrorNote({ children, onRetry }: { children: ReactNode; onRetry?
       <svg className="mt-0.5 size-4 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9 5a1 1 0 112 0v5a1 1 0 11-2 0V5zm1 8a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
       </svg>
-      <div className="flex-1">
+      <div className="min-w-0 flex-1 [overflow-wrap:anywhere]">
         {children}
         {onRetry && (
           <button onClick={onRetry} className="mt-1 font-semibold underline underline-offset-2">
