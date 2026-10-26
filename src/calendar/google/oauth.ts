@@ -63,7 +63,7 @@ async function parseTokenResponse(res: Response): Promise<TokenSet> {
   const body = (await res.json().catch(() => ({}))) as RawTokenResponse;
   if (!res.ok || !body.access_token) {
     // Never echo the body — it can contain token material.
-    throw new Error(`google token endpoint returned ${res.status}${body.error ? ` (${body.error})` : ""}`);
+    throw new Error("Google token exchange was rejected.");
   }
   return {
     accessToken: body.access_token,
@@ -81,6 +81,7 @@ export async function exchangeCode(opts: {
 }): Promise<TokenSet> {
   const fetchFn = opts.fetchFn ?? fetch;
   const res = await fetchFn(GOOGLE_TOKEN_ENDPOINT, {
+    signal: AbortSignal.timeout(30_000),
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -102,6 +103,7 @@ export async function refreshAccessToken(opts: {
 }): Promise<TokenSet> {
   const fetchFn = opts.fetchFn ?? fetch;
   const res = await fetchFn(GOOGLE_TOKEN_ENDPOINT, {
+    signal: AbortSignal.timeout(30_000),
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -114,7 +116,7 @@ export async function refreshAccessToken(opts: {
   if (res.status === 400 || res.status === 401) {
     // invalid_grant: the refresh token was revoked, expired, or rotated away.
     const body = (await res.json().catch(() => ({}))) as RawTokenResponse;
-    const err = new Error(`refresh rejected (${body.error ?? res.status})`) as Error & { revoked?: boolean };
+    const err = new Error("Google token refresh was rejected.") as Error & { revoked?: boolean };
     err.revoked = body.error === "invalid_grant";
     throw err;
   }
@@ -124,6 +126,7 @@ export async function refreshAccessToken(opts: {
 export async function revokeToken(token: string, fetchFn?: typeof fetch): Promise<void> {
   const f = fetchFn ?? fetch;
   await f(GOOGLE_REVOKE_ENDPOINT, {
+    signal: AbortSignal.timeout(10_000),
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ token }),

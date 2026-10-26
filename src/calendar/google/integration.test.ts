@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { GoogleIntegrationService, GoogleNotConnectedError } from "./integration.js";
 import { GOOGLE_CALENDAR_SCOPES, GOOGLE_REVOKE_ENDPOINT, GOOGLE_TOKEN_ENDPOINT } from "./oauth.js";
 import { MemoryAuditRepo } from "../../db/memory/stores.js";
@@ -81,7 +81,7 @@ function makeDeps(opts: DepsOpts = {}) {
     fetchFn,
     now: () => 1_000_000,
   });
-  return { service, store, audit, stored, calls };
+  return { service, store, audit, stored, calls, secretStore };
 }
 
 async function connectThrough(service: GoogleIntegrationService): Promise<string> {
@@ -238,7 +238,7 @@ describe("corrective review: fail-closed credentials", () => {
     const { service, store, stored, calls } = makeDeps();
     store.saveError = new Error("storage not provisioned");
     const state = await connectThrough(service);
-    await expect(service.handleCallback({ code: "c", state })).rejects.toThrow("storage not provisioned");
+    await expect(service.handleCallback({ code: "c", state })).rejects.toMatchObject({ stage: "integration_persistence" });
     // The Vault secret was removed and the refresh token revoked.
     expect(stored).toHaveLength(0);
     const { GOOGLE_REVOKE_ENDPOINT } = await import("./oauth.js");
@@ -255,5 +255,48 @@ describe("corrective review: fail-closed credentials", () => {
     service.invalidateAccessToken();
     await expect(service.getAccessToken()).rejects.toBeInstanceOf(GoogleNotConnectedError);
     expect(store.record?.connected).toBe(false);
+  });
+});
+
+describe("OAuth stage diagnostics and cleanup (synthetic credentials)", () => {
+  it.each(["token_exchange", "calendar_access", "vault_storage", "integration_persistence", "audit"] as const)("attributes %s without leaking raw errors; cleans issued credentials", async (stage) => {
+    const h = makeDeps(stage === "token_exchange"
+      ? { tokenResponses: [{ status: 400, body: { error: "synthetic-secret-error" } }] }
+      : stage === "calendar_access" ? { calendarListStatus: 404 } : {});
+    const state = await connectThrough(h.service);
+    if (stage === "vault_storage") vi.spyOn(h.secretStore, "put").mockRejectedValue(new Error("synthetic-secret-error"));
+    if (stage === "integration_persistence") h.store.saveError = new Error("synthetic-secret-error");
+    if (stage === "audit") vi.spyOn(h.audit, "append").mockRejectedValue(new Error("synthetic-secret-error"));
+    const error = await h.service.handleCallback({ code: "synthetic-code", state }).catch((err) => err);
+    expect(error.stage).toBe(stage);
+    expect(error.message).not.toContain("synthetic-secret-error");
+    expect(error.message).not.toContain("synthetic-code");
+    expect(error.details).toBeUndefined();
+    expect(h.stored).toHaveLength(0);
+    expect(h.store.record?.connected).not.toBe(true);
+    expect(h.calls.some((call) => call.url === GOOGLE_REVOKE_ENDPOINT)).toBe(stage !== "token_exchange");
+    await expect(h.service.handleCallback({ code: "synthetic-code", state })).rejects.toMatchObject({ stage: "state" });
+  });
+
+  it("reports incomplete local cleanup rather than concealing it", async () => {
+    const h = makeDeps();
+    const state = await connectThrough(h.service);
+    h.store.saveError = new Error("synthetic-save-error");
+    vi.spyOn(h.secretStore, "remove").mockRejectedValue(new Error("synthetic-delete-error"));
+    await expect(h.service.handleCallback({ code: "synthetic-code", state })).rejects.toMatchObject({
+      stage: "integration_persistence", cleanupIncomplete: true,
+    });
+    expect(h.calls.some((call) => call.url === GOOGLE_REVOKE_ENDPOINT)).toBe(true);
+  });
+
+  it("a successful reconnect removes the previous secret after persistence and audit", async () => {
+    const h = makeDeps();
+    await h.service.handleCallback({ code: "synthetic-code", state: await connectThrough(h.service) });
+    const oldRef = h.store.record!.credentialRef;
+    await h.service.handleCallback({ code: "synthetic-new-code", state: await connectThrough(h.service) });
+    expect(h.store.record?.connected).toBe(true);
+    expect(h.store.record?.credentialRef).not.toBe(oldRef);
+    expect(h.stored).toHaveLength(1);
+    expect(h.stored[0]?.id).toBe(h.store.record?.credentialRef);
   });
 });

@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { randomUUID } from "node:crypto";
 import { createSecretStore, type SecretStore, type VaultSecretAdapter } from "./store.js";
 
 /**
@@ -35,8 +36,15 @@ export class PgVaultAdapter implements VaultSecretAdapter {
   constructor(private readonly pool: Pool) {}
 
   async create(secret: string, name: string): Promise<string> {
-    const { rows } = await this.pool.query(`select id from vault.create_secret($1, $2)`, [secret, name]);
-    return String(rows[0].id);
+    // create_secret returns a scalar UUID, not a row with an id column.
+    // Vault names are unique: reconnects/rotations must not collide with the
+    // previous credential before its replacement has been persisted.
+    const { rows } = await this.pool.query(`select vault.create_secret($1, $2) as id`, [secret, `${name}-${randomUUID()}`]);
+    const id: unknown = rows[0]?.id;
+    if (typeof id !== "string" || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) {
+      throw new Error("Vault did not return a valid secret reference");
+    }
+    return id;
   }
 
   async decrypt(secretId: string): Promise<string> {
@@ -49,7 +57,7 @@ export class PgVaultAdapter implements VaultSecretAdapter {
   }
 
   async delete(secretId: string): Promise<void> {
-    await this.pool.query(`select vault.delete_secret($1)`, [secretId]);
+    await this.pool.query(`delete from vault.secrets where id = $1::uuid`, [secretId]);
   }
 }
 

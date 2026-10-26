@@ -6,6 +6,7 @@ import { GoogleIntegrationService } from "./integration.js";
 import { MemoryAuditRepo } from "../../db/memory/stores.js";
 import { MemoryGoogleIntegrationStore } from "./store.js";
 import { createSecretStore } from "../../secrets/store.js";
+import { CALLBACK_MESSAGES, OAuthCallbackError } from "./callbackError.js";
 
 /**
  * Route-level checks: the admin guard covers status/connect/disconnect; the
@@ -68,13 +69,34 @@ describe("Google integration routes", () => {
     const state = new URL(authUrl).searchParams.get("state") as string;
     const res = await app.inject({ method: "GET", url: `/api/v1/admin/integrations/google/callback?code=good&state=${state}` });
     expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/html");
+    expect(res.headers["cache-control"]).toBe("no-store");
     expect(res.body).toContain("Connected");
     expect(res.body).not.toContain("rt");
     expect(res.body).not.toContain("at");
     // A forged state is rejected with a safe error page, never a token.
     const bad = await app.inject({ method: "GET", url: "/api/v1/admin/integrations/google/callback?code=good&state=forged" });
     expect(bad.statusCode).toBe(400);
+    expect(bad.headers["content-type"]).toContain("text/html");
+    expect(bad.body).toContain("[state]");
     expect(bad.body).toContain("Not connected");
     await app.close();
+  });
+
+  it.each([...Object.keys(CALLBACK_MESSAGES), "unknown"])("renders only safe actionable %s failure copy", async (stage) => {
+    const app = Fastify();
+    registerGoogleIntegrationRoutes(app, {
+      googleIntegration: { handleCallback: async () => {
+        if (stage === "unknown") throw new Error("synthetic-sensitive-provider-details<script>");
+        throw new OAuthCallbackError(stage as keyof typeof CALLBACK_MESSAGES);
+      } } as unknown as GoogleIntegrationService,
+    });
+    try {
+      const res = await app.inject({ method: "GET", url: "/api/v1/admin/integrations/google/callback?code=synthetic-code&state=synthetic-state" });
+      expect(res.statusCode).toBe(400);
+      expect(res.headers["content-type"]).toContain("text/html");
+      expect(res.body).toContain(`[${stage}]`);
+      for (const secret of ["synthetic-code", "synthetic-state", "synthetic-sensitive", "<script>"]) expect(res.body).not.toContain(secret);
+    } finally { await app.close(); }
   });
 });

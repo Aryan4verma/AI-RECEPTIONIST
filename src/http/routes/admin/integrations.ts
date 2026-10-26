@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { requireAdmin } from "../../../auth/adminGuard.js";
 import { AppError } from "../../../server/errors.js";
 import type { GoogleIntegrationService } from "../../../calendar/google/integration.js";
+import { OAuthCallbackError } from "../../../calendar/google/callbackError.js";
 
 /**
  * Owner-only Google Calendar integration routes (Stage 7). All require the
@@ -25,14 +26,19 @@ export function registerGoogleIntegrationRoutes(app: FastifyInstance, deps: { go
   });
 
   app.get("/api/v1/admin/integrations/google/callback", async (request, reply) => {
-    if (!deps.googleIntegration) throw new AppError("CALENDAR_UNAVAILABLE", "Google Calendar integration is not configured.");
+    reply.type("text/html; charset=utf-8").header("cache-control", "no-store").header("referrer-policy", "no-referrer");
     const { code, state, error } = request.query as { code?: string; state?: string; error?: string };
     try {
+      if (!deps.googleIntegration) throw new OAuthCallbackError("configuration");
       await deps.googleIntegration.handleCallback({ code, state, error });
     } catch (err) {
-      const message = err instanceof AppError ? err.message : "Google Calendar connection failed.";
+      const failure = err instanceof OAuthCallbackError ? err : null;
+      const stage = failure?.stage ?? "unknown";
+      // Never log the error object, request query, code, nonce or token data.
+      request.log.warn({ stage, cleanupIncomplete: failure?.cleanupIncomplete ?? false }, "Google OAuth callback failed");
+      const message = failure?.message ?? "Unexpected OAuth error. Ask the administrator to check backend availability, then start a fresh connection from the admin console.";
       reply.code(400);
-      return callbackPage(`Connection failed: ${message}`, false);
+      return callbackPage(`Connection failed [${stage}]: ${message}`, false);
     }
     return callbackPage("Google Calendar connected. You can close this window and return to the Cleardesk console.", true);
   });

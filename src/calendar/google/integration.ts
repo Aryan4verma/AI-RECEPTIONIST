@@ -14,6 +14,8 @@ import {
   type GoogleIntegrationRecord,
   type GoogleIntegrationStore,
 } from "./store.js";
+import { OAuthCallbackError, type CallbackStage } from "./callbackError.js";
+import type { TokenSet } from "./oauth.js";
 
 const SECRET_NAMESPACE = "google-calendar";
 /** Clock skew guard on cached access tokens. */
@@ -110,51 +112,45 @@ export class GoogleIntegrationService {
    * writable BEFORE persisting credentials.
    */
   async handleCallback(params: { code?: string; state?: string; error?: string }): Promise<CallbackResult> {
-    this.assertConfigured();
+    if (!this.isConfigured()) throw new OAuthCallbackError("configuration");
     const { code, state, error } = params;
-    if (error) throw new AppError("INVALID_INPUT", "Google authorization failed: consent was not granted.");
-    if (!code || !state) throw new AppError("INVALID_INPUT", "Malformed OAuth callback.");
+    if (!state) throw new OAuthCallbackError("state", "INVALID_INPUT");
     const pending = this.pendingStates.get(state);
     if (!pending || pending.expiresAtMs < this.now()) {
       this.pendingStates.delete(state);
-      throw new AppError("FORBIDDEN", "Unknown or expired OAuth state — start the connection again.");
+      throw new OAuthCallbackError("state", "FORBIDDEN");
     }
     this.pendingStates.delete(state); // single use — replays are rejected
     const adminUserId = pending.adminUserId;
+    if (error) throw new OAuthCallbackError("consent", "INVALID_INPUT");
+    if (!code) throw new OAuthCallbackError("state", "INVALID_INPUT");
 
-    const tokens = await exchangeCode({
-      clientId: this.deps.creds.clientId,
-      clientSecret: this.deps.creds.clientSecret,
-      redirectUri: this.deps.creds.redirectUri,
-      code,
-      fetchFn: this.deps.fetchFn,
-    });
-
-    // Fail-closed: without a refresh token the connection cannot survive
-    // access-token expiry — store nothing, revoke, and ask for reconnect.
-    if (!tokens.refreshToken) {
-      await revokeToken(tokens.accessToken, this.deps.fetchFn);
-      throw new AppError("INVALID_INPUT", "Google did not return a refresh token — the connection was refused. Reconnect and ensure consent is granted.");
-    }
-
-    // Verify the dedicated calendar BEFORE persisting credentials.
-    const calendarInfo = await this.fetchCalendarMeta(tokens.accessToken).catch((err) => {
-      throw new AppError("CALENDAR_UNAVAILABLE", "Connected to Google, but the dedicated calendar could not be verified.", {
-        cause: err instanceof Error ? err.message : "unknown",
-      });
-    });
-    if (!["owner", "writer"].includes(calendarInfo.accessRole)) {
-      await revokeToken(tokens.refreshToken, this.deps.fetchFn);
-      throw new AppError("FORBIDDEN", "The configured calendar is not writable with this Google account (access role: reader).");
-    }
-
-    // Fail-closed credential storage + no orphaned secrets: if persistence
-    // fails after the secret was stored, remove it and revoke the token.
+    let stage: CallbackStage = "token_exchange";
+    let tokens: TokenSet | null = null;
     const connectedAt = new Date(this.now()).toISOString();
     let ref: string | null = null;
+    let previousRef: string | null = null;
+    let persisted = false;
     try {
+      tokens = await exchangeCode({
+        clientId: this.deps.creds.clientId,
+        clientSecret: this.deps.creds.clientSecret,
+        redirectUri: this.deps.creds.redirectUri,
+        code,
+        fetchFn: this.deps.fetchFn,
+      });
+      if (!tokens.refreshToken) throw new OAuthCallbackError("refresh_token", "INVALID_INPUT");
+
+      stage = "calendar_access";
+      const calendarInfo = await this.fetchCalendarMeta(tokens.accessToken);
+      if (!["owner", "writer"].includes(calendarInfo.accessRole)) throw new OAuthCallbackError(stage, "FORBIDDEN");
+
+      stage = "integration_persistence";
+      previousRef = (await this.deps.store.load())?.credentialRef ?? null;
+      stage = "vault_storage";
       const stored = await this.deps.secretStore.put(SECRET_NAMESPACE, tokens.refreshToken);
       ref = stored.ref;
+      stage = "integration_persistence";
       await this.deps.store.save({
         ...EMPTY_RECORD,
         connected: true,
@@ -166,18 +162,33 @@ export class GoogleIntegrationService {
         lastVerifiedAt: connectedAt,
         lastError: null,
       });
+      persisted = true;
+      stage = "audit";
+      await this.deps.audit.append({
+        actorType: "admin", actorId: adminUserId, action: "google_calendar.connected",
+        entityType: "integration", entityId: "google_calendar",
+        detail: { calendarId: this.deps.creds.calendarId, accessRole: calendarInfo.accessRole },
+      });
+      stage = "vault_storage";
+      if (previousRef && previousRef !== ref) await this.deps.secretStore.remove(previousRef);
+      this.cachedAccessToken = { token: tokens.accessToken, expiresAtMs: this.now() + tokens.expiresInSec * 1000 - TOKEN_EXPIRY_SKEW_MS };
+      return { connected: true, calendarId: this.deps.creds.calendarId, accessRole: calendarInfo.accessRole, connectedBy: adminUserId };
     } catch (err) {
-      if (ref) await this.deps.secretStore.remove(ref).catch(() => undefined);
-      await revokeToken(tokens.refreshToken, this.deps.fetchFn);
-      throw err;
+      let cleanupIncomplete = false;
+      if (persisted) {
+        try { await this.deps.store.save({ ...EMPTY_RECORD, lastError: `OAuth ${stage} failed; reconnect required` }); }
+        catch { cleanupIncomplete = true; }
+      }
+      for (const cleanupRef of new Set([ref, persisted ? previousRef : null])) {
+        if (!cleanupRef) continue;
+        try { await this.deps.secretStore.remove(cleanupRef); }
+        catch { cleanupIncomplete = true; }
+      }
+      if (tokens) await revokeToken(tokens.refreshToken || tokens.accessToken, this.deps.fetchFn);
+      this.cachedAccessToken = null;
+      throw new OAuthCallbackError(err instanceof OAuthCallbackError ? err.stage : stage,
+        err instanceof AppError ? err.code : "CALENDAR_UNAVAILABLE", cleanupIncomplete);
     }
-    this.cachedAccessToken = { token: tokens.accessToken, expiresAtMs: this.now() + tokens.expiresInSec * 1000 - TOKEN_EXPIRY_SKEW_MS };
-    await this.deps.audit.append({
-      actorType: "admin", actorId: adminUserId, action: "google_calendar.connected",
-      entityType: "integration", entityId: "google_calendar",
-      detail: { calendarId: this.deps.creds.calendarId, accessRole: calendarInfo.accessRole },
-    });
-    return { connected: true, calendarId: this.deps.creds.calendarId, accessRole: calendarInfo.accessRole, connectedBy: adminUserId };
   }
 
   async status(): Promise<
@@ -296,7 +307,7 @@ export class GoogleIntegrationService {
     // call (404 → the calendar is not accessible to this account).
     const listRes = await (this.deps.fetchFn ?? fetch)(
       `https://www.googleapis.com/calendar/v3/users/me/calendarList/${encodeURIComponent(this.deps.creds.calendarId)}`,
-      { headers: { authorization: `Bearer ${accessToken}` } },
+      { headers: { authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(30_000) },
     );
     if (!listRes.ok) throw new Error(`calendarList.get returned ${listRes.status}`);
     const listBody = (await listRes.json()) as { accessRole?: string };
