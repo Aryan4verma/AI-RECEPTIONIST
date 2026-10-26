@@ -6,7 +6,7 @@ Calendar integration. Frontend is a separate phase.
 
 - **Authoritative state:** `docs/backend/PROGRESS.md` (control/resume §1, §7)
 - **API contract:** `docs/backend/API.md` · **Handoff:** `docs/backend/HANDOFF.md`
-- **Migrations:** `supabase/migrations/` (CLI-only application; 0001–0006 applied to project `ogxdszjypswutekqgorb`)
+- **Migrations:** `supabase/migrations/` (CLI-only application; 0001–0007 applied to project `ogxdszjypswutekqgorb`)
 
 ## Quickstart
 
