@@ -26,6 +26,8 @@
 
 **Final local validation:** backend fixture/process suites **241/241 PASS (33 files)**, including the repaired migration-verifier fixture and 0007 security tests (`npm test -- --exclude '**/*.live.test.ts' --maxWorkers=1 --minWorkers=1`); backend typecheck PASS. Frontend **16/16 PASS**, frontend build PASS; backend build PASS. Real local-model synthetic dialogue result is separate from these fixture counts. Live audio remains BLOCKED as above.
 
+**OAuth preparation checkpoint, 2026-10-26:** Verified commits `00479a0`/`99439bb` on clean main; normal fast-forward push synchronized `origin/main` from `0d99e8c` to `99439bbcaf9333aaee8a3a915ba6c62bb3f97b6a`. Owner independently verified 0007; no migrations reapplied. All four Google settings are absent from backend `.env`; owner chose to populate them personally (private credential file was not accessed). `CALENDAR_MODE=mock`. One backend listener on loopback 8787; live health/readiness 200 with DB/Ollama ready; unauthenticated Google admin status 401. Authenticated status/consent verification remains pending configuration and owner sign-in. During callback review, synthetic rejected request proved request logs included code/state; request serializer now removes query strings. Live rejected-callback retest confirms synthetic code/state absent from logs; 7 focused logger/HTTP/Google-route fixture tests and typecheck PASS. No real Google API calls, OAuth connection or events performed.
+
 ## 2. [REQUIRED] Authoritative artifact register
 
 | Concern / document ID | Authoritative path / version | Applicability / owner | Approval reference | Dependencies / freshness |
@@ -132,7 +134,7 @@ NOT_APPLICABLE — no incidents.
 
 ## 7. [REQUIRED] Resume instruction
 
-- **Next action requires owner authorization:** Configure the four existing Google environment variables from secure local credentials, naming a dedicated test calendar, then owner completes Google consent at `http://localhost:8787/api/v1/admin/integrations/google/callback`. Keep mock mode. No real Google event writes without separate Q3 authorization. No additional features.
+- **Next action:** Owner saves all four Google variables to backend `.env`, with callback `http://localhost:8787/api/v1/admin/integrations/google/callback` and the intended dedicated test calendar (never `primary`), then reports ready. Restart the existing backend without a duplicate; verify safe configuration metadata. Owner signs into Admin → Overview → Google Calendar → Connect Google account and personally selects account/consent. Afterwards verify authenticated status `connected=true`, `storeAvailable=true`, matching dedicated calendar and owner/writer access. Keep mock mode; real Google event writes remain separately Q3-gated. No additional features.
 - **G01 status:** PASS — decision recorded 2026-10-24 in §5, bound to PROJECT/PLAN/TESTING v0.2. Q1 resolved (Supabase, platform-only approval). Q4 deferred to G02 (now presented in ADR-0006).
 - **After G02 approval:** record decision in §5 ledger → Stage 3 backend foundation (scaffold + migrations per approved design; first-migration application needs its own action authorization per PLAN §4).
 - **Remaining gates:** secure Google credential configuration needs owner authorization; Google consent is owner-completed; real Calendar writes need separate Q3 naming a dedicated test calendar. Live STT needs sufficient RAM; do not lower admission gates. SEC-F7 remains open.
