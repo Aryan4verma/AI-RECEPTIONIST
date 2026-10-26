@@ -18,6 +18,14 @@ function committedMigrations() {
     })
     .filter((x) => x.version);
 }
+
+function committedTables() {
+  const dir = new URL("../supabase/migrations/", import.meta.url);
+  return committedMigrations().flatMap((migration) => {
+    const sql = readFileSync(new URL(migration.file, dir), "utf8").replace(/--[^\n]*/g, "");
+    return [...sql.matchAll(/create table\s+(?:if not exists\s+)?public\.(\w+)/gi)].map((m) => m[1]);
+  }).sort();
+}
 import { loadEnv } from "../dist/config/env.js";
 import { createDbClients } from "../dist/db/clients.js";
 
@@ -69,10 +77,13 @@ export async function verify(pool) {
       `select c.relname as name, c.relrowsecurity as rls from pg_class c
        join pg_namespace n on n.oid = c.relnamespace
        where n.nspname = 'public' and c.relkind = 'r' order by c.relname`,
-      (rows) => ({
-        ok: rows.length === 11 && rows.every((r) => r.rls),
-        detail: `${rows.length} tables, ${rows.filter((r) => r.rls).length} with RLS`,
-      }),
+      (rows) => {
+        const expected = committedTables();
+        return {
+          ok: JSON.stringify(rows.map((r) => r.name).sort()) === JSON.stringify(expected) && rows.every((r) => r.rls),
+          detail: `${rows.length} tables (expected ${expected.length}), ${rows.filter((r) => r.rls).length} with RLS`,
+        };
+      },
     ),
   );
 

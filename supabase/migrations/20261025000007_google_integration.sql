@@ -1,10 +1,9 @@
 -- Migration 0007 — Google Calendar integration state (Stage 7).
--- PREPARED, NOT APPLIED: requires the owner's explicit DDL authorization,
--- then replay via the authorized Supabase CLI migration workflow only.
+-- Apply only with owner authorization via the Supabase CLI migration workflow.
 -- Isolated from business_config (whose CHECK constraint permits only the six
 -- business-facing categories). Single-row table (singleton id enforced).
 
-create table if not exists public.google_integration (
+create table public.google_integration (
   id uuid primary key check (id = '00000000-0000-0000-0000-000000000001'),
   connected boolean not null default false,
   calendar_id text,
@@ -22,4 +21,7 @@ create table if not exists public.google_integration (
 -- Vault posture: RLS on with NO policies — anon/authenticated get nothing;
 -- only the service role (backend) bypasses RLS.
 alter table public.google_integration enable row level security;
-revoke all on public.google_integration from anon, authenticated;
+revoke all on public.google_integration from public, anon, authenticated, service_role;
+-- RLS bypass does not grant table privileges. The backend store loads and
+-- upserts this row; it does not delete rows or administer this table.
+grant select, insert, update on public.google_integration to service_role;

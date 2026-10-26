@@ -29,19 +29,8 @@ describe("classifyPgAuthError (repair finding 1: username vs password)", () => {
 describe("verify() check contract (repair finding 1: no shared mutable state)", () => {
   const fakePool = (resultRows) => ({ query: async () => ({ rows: resultRows }) });
 
-  const fullGreen = [
-    { name: "t1", rls: true },
-    { name: "t2", rls: true },
-    { name: "t3", rls: true },
-    { name: "t4", rls: true },
-    { name: "t5", rls: true },
-    { name: "t6", rls: true },
-    { name: "t7", rls: true },
-    { name: "t8", rls: true },
-    { name: "t9", rls: true },
-    { name: "t10", rls: true },
-    { name: "t11", rls: true },
-  ];
+  const fullGreen = ["app_admins", "appointments", "audit_log", "booking_state", "business_config", "consent_decisions", "conversations", "customers", "google_integration", "messages", "model_providers", "recordings"]
+    .map((name) => ({ name, rls: true }));
 
   it("verify() executes the check sequence against a pool-like client and returns independent results", async () => {
     // The sequence issues 6 queries; feed each a matching shape via a
@@ -55,6 +44,7 @@ describe("verify() check contract (repair finding 1: no shared mutable state)", 
         { version: "20261024000004", name: "ai_providers" },
         { version: "20261024000005", name: "consent_and_records" },
         { version: "20261024000006", name: "rls_policies_grants" },
+        { version: "20261025000007", name: "google_integration" },
       ],
       [{ anon_select: false, auth_select: true, auth_insert_messages: false, svc_insert: true, svc_delete_audit: false }],
       [{ tgname: "enforce_recording_consent", tgenabled: "O" }],
