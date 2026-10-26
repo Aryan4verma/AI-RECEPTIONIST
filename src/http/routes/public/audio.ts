@@ -61,8 +61,8 @@ export function registerAudioRoutes(app: FastifyInstance, deps: AudioRouteDeps) 
       new Uint8Array(buffer),
       deps.maxAudioSeconds,
     );
-    if (transcript.length === 0) {
-      throw new AppError("STT_FAILED", "No speech was detected in the audio.");
+    if (transcript.trim().length === 0) {
+      throw new AppError("NO_SPEECH", "No speech was detected in the audio. Please try speaking again.");
     }
     void kind;
 
@@ -75,7 +75,7 @@ export function registerAudioRoutes(app: FastifyInstance, deps: AudioRouteDeps) 
       intent: turn.intent,
       extractionComplete: turn.extractionComplete,
       offer: turn.offer,
-      conversationState: turn.intent === "request_human" ? "escalated" : conversation.status,
+      conversationState: turn.escalated ? "escalated" : conversation.status,
     };
   });
 }

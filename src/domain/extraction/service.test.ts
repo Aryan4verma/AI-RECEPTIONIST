@@ -67,6 +67,12 @@ const completeTurn: Partial<ExtractionResult> = {
 };
 
 describe("FR-3 extraction service", () => {
+  it("discards invented name/contact values rather than persisting model placeholders", async () => {
+    const svc = makeService([{ customer_name: { state: "known", value: "John Doe" }, contact: { state: "known", value: "john@example.com" } }]);
+    const result = await svc.mergeTurn(null, "Can I book a site visit for tomorrow?");
+    expect(result.customer_name.state).toBe("unknown");
+    expect(result.contact.state).toBe("unknown");
+  });
   it("merges known values across turns; known values are sticky", async () => {
     const svc = makeService([
       { customer_name: { state: "known", value: "Asha Verma" } },
@@ -98,7 +104,7 @@ describe("FR-3 extraction service", () => {
 
   it("resolves a complete extraction with business-config defaults (duration/timezone)", async () => {
     const svc = makeService([completeTurn]);
-    const merged = await svc.mergeTurn(null, "all details");
+    const merged = await svc.mergeTurn(null, "Asha Verma, asha@example.com, dentist consultation next week in person");
     const resolved = await svc.resolve(merged);
     expect(resolved).not.toBeNull();
     expect(resolved?.durationMinutes).toBe(45); // config default, not 30
@@ -111,7 +117,7 @@ describe("FR-3 extraction service", () => {
     const svc = makeService([
       { ...completeTurn, requested_time: { state: "known", value: past.toISOString() } },
     ]);
-    const merged = await svc.mergeTurn(null, "yesterday please");
+    const merged = await svc.mergeTurn(null, "Asha Verma, asha@example.com, yesterday please");
     await expect(svc.resolve(merged)).rejects.toMatchObject({ code: "INVALID_INPUT" });
   });
 

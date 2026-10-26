@@ -12,6 +12,7 @@ export const INTENTS = [
   "cancel_appointment",
   "reschedule_appointment",
   "ask_question",
+  "property_enquiry",
   "greeting",
   "chitchat",
   "request_human",

@@ -14,8 +14,8 @@ mic → silence detection (end of turn) → POST /api/v1/conversations/{id}/audi
 
 - **No new infrastructure.** It reuses the existing speech sidecar, conversation
   service and inference stack over the same API and conversation token.
-- **Feedback guard:** the recorder is paused while the assistant speaks, so its
-  own TTS can never be transcribed as a customer turn. Barge-in watches a
+- **Feedback guard:** capture is inactive/paused while the assistant speaks.
+  Acoustic echo after playback still requires live-device verification. Barge-in watches a
   separate echo-cancelled analyser and cancels TTS on loud sustained input.
 - **Honest turn-taking:** end of turn = ~1.2 s of silence after real speech;
   a 25 s ceiling forces an end-of-turn on long monologues.
@@ -37,6 +37,17 @@ mic → silence detection (end of turn) → POST /api/v1/conversations/{id}/audi
 - The engine lifecycle (repeatable turns, barge-in, feedback guard, mid-turn
   end invalidation, STT degradation with retry, silent mode) is unit-tested in
   `frontend/src/call/engine.test.ts`.
+
+2026-10-26 repair: `recorder.ts` resets bytes and the stop promise on every new
+utterance, waits for final data before completing, and disposes on termination.
+`recorder.test.ts` drives the production adapter with browser-event fixtures:
+two VAD turns upload different bytes and display transcripts derived from those
+bytes, once each. Both tests fail against the original adapter. Separated noise
+blips and muted input are ignored; continuous speech is capped at 25 seconds.
+Empty STT (`NO_SPEECH`) prompts retry without adding an invented transcript.
+Transcripts remain visible in the call UI; no diagnostic transcript/audio logs
+were added. Real STT script: BLOCKED at 1.19 GB free / 1.5 GB required; microphone,
+acoustic feedback and barge-in have not been verified with live audio.
 
 ## Running it from a phone (or any other device)
 

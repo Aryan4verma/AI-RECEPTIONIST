@@ -102,6 +102,50 @@ async function finishSpeech(w: World, engine: CallEngine, t: { now: number }) {
 }
 
 describe("CallEngine", () => {
+  it("silence, separated noise blips and muted input never submit a customer turn", async () => {
+    const { w, deps } = makeWorld();
+    const { engine } = await startCall(deps);
+    await finishSpeech(w, engine, { now: 0 });
+    let now = 100;
+    for (let i = 0; i < 20; i++) {
+      w.levels = [0.05]; engine.tick(now += 90);
+      w.levels = [0]; engine.tick(now += 300);
+    }
+    engine.tick(now += 30000);
+    expect(w.recorder.stopped).toBe(0);
+    engine.toggleMute();
+    w.levels = [0.2];
+    for (let i = 0; i < 10; i++) engine.tick(now += 90);
+    w.levels = [0]; engine.tick(now += 2000);
+    expect(w.recorder.stopped).toBe(0);
+    await engine.end();
+  });
+
+  it("a continuous utterance is bounded at 25 seconds even without silence", async () => {
+    const { w, deps } = makeWorld();
+    const { engine } = await startCall(deps);
+    await finishSpeech(w, engine, { now: 0 });
+    w.levels = [0.05];
+    engine.tick(100);
+    engine.tick(25100);
+    expect(engine.getState().status).toBe("processing");
+    expect(w.recorder.stopped).toBe(1);
+    await engine.end();
+  });
+
+  it.each(["NO_SPEECH", "OLLAMA_UNAVAILABLE"])("%s does not invent a customer transcript or assistant response", async (sttCode) => {
+    const { w, deps } = makeWorld({ sttCode });
+    const { engine } = await startCall(deps);
+    await finishSpeech(w, engine, { now: 0 });
+    w.levels = [0.05]; engine.tick(100); engine.tick(500);
+    w.levels = [0]; engine.tick(1800);
+    await flush(); await flush();
+    expect(engine.getState().transcript).toHaveLength(1); // greeting only
+    expect(engine.getState().status).toBe(sttCode === "NO_SPEECH" ? "listening" : "error");
+    expect(engine.getState().note).toBeTruthy();
+    await engine.end();
+  });
+
   it("connect → speak greeting (recorder paused = feedback guard) → listen → silence ends turn → reply spoken → listens again", async () => {
     const { w, deps } = makeWorld();
     const { engine } = await startCall(deps);

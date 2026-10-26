@@ -4,9 +4,9 @@
 | --- | --- |
 | Project ID | AI-RECEPTIONIST |
 | Document ID | PROGRESS |
-| Version / date | v0.7 — 2026-10-24 |
+| Version / date | v0.8 — 2026-10-26 |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner (name not recorded — pending) |
-| Scope | Durable register for the AI Receptionist **backend + AI phase**. Frontend implementation is explicitly out of scope in this phase (Frontend Master deferred to a separate, explicitly requested phase). |
+| Scope | Cleardesk backend, AI and existing frontend; current work is focused voice repair and Google integration migration 0007. Historical stage rows below retain their original evidence. |
 | Document lifecycle | draft (living register; sections updated per stage) |
 | Input provenance | Human master execution prompt (project owner, 2026-10-23); Stage 0 discovery evidence recorded in §8 |
 | Related authoritative files | Skill entry points (read-only, outside repository): `C:\Users\sv178\OneDrive\Desktop\.agents\skills\backend-skill\backend-production\SKILL.md`, `C:\Users\sv178\OneDrive\Desktop\.agents\skills\ai-capabilities\SKILL.md` |
@@ -14,11 +14,13 @@
 
 ## 1. [REQUIRED] Control and current task
 
-- **Task ID / mode:** T3-FOUNDATION — execution mode, autonomous with mandatory human gates.
-- **Current phase / protocol:** **G02-DESIGN PASS** (conditional approval; all conditions A–G reconciled and verified at documentation level, see §5) → **Stage 3 — Backend Foundation in progress**; **first-migration action authorization PENDING** (no DDL applied to `ogxdszjypswutekqgorb`).
-- **Scope of completed work:** Stage 0–2 as recorded; G02 conditions A–G reconciled: (A) outdated cascade/auto-fallback/EXISTS-pattern statements removed and aligned to ADRs; (B) recordings deletion lifecycle (`deletion_state`, set-null FK, storage-before-row deletion, no masquerade); (C) `UNRESOLVED` booking state + `calendar_idempotency_key`/reconciliation fields + `unresolved` appointment status across schema/state machine/API; (D) latest-decision consent trigger with `valid_until` + five negative cases (TC-33); (E) hardened `private.is_app_admin()` per current Supabase guidance (AUTH/DATABASE/TC-35); (F) `summary_expires_at`, deletion-state and reconciliation fields present; (G) CLI-only migration wording (no execute_sql path). Stage 3 scaffold started (see §4 evidence).
+- **Task ID / mode:** Voice repair + migration 0007; autonomous inside owner-approved scope.
+- **Current phase:** Voice code repair verified; prepare/apply only Google migration 0007 under the owner's 2026-10-26 conditional authorization. Migrations 0001–0006 were applied previously.
+- **Completed repair (based on `0d99e8c`):** per-turn recorder bytes/promises reset; pending-stop guard and cleanup; noise/mute/long-turn handling; reliable TTS cancellation; contextual property enquiry routing and source-checked preference extraction; reject invented booking name/contact; audio handoff state and empty-speech handling corrected. No UI redesign, cloud inference or RAM-gate change.
 - **Inspected revision / environment:** branch `main`, tracking `origin/main`. Environment facts in §8 unchanged.
-- **Current authorization:** Master execution prompt authorizes Stage 0 discovery work (read-only + register creation) and subsequent staged lifecycle with mandatory human gates. No remote mutation authorization yet.
+- **Current authorization:** Owner message 2026-10-26 authorizes only reviewed `20261025000007_google_integration.sql` on `ogxdszjypswutekqgorb` via CLI, after tested voice commit and security review. Stop on unrelated pending migration/material scope change. Google credentials/API calls, real Calendar writes and cloud inference remain unauthorized; keep mock mode.
+
+**Voice verification, 2026-10-26:** 234 backend tests PASS (31 files; live suites and the pre-existing migration-verifier fixture excluded), 16 frontend tests PASS, backend typecheck/build and frontend build PASS. Two-turn recorder regression FAILS with original adapter (first utterance submitted twice), PASSES with fix. Real local qwen3:1.7b synthetic dialogue PASS including 3BHK → 80 lakh context → site visit asking for missing name. Earlier live reruns exposed greeting misclassification and invented identity; routing and identity-evidence guards now cover both. STT script BLOCKED at 1.19 GB free / 1.5 GB gate. Genuine microphone capture, acoustic echo/barge-in and end-to-end live audio remain unverified. The migration-verifier fixture assumes six files despite committed 0007; repair/verification belongs to the migration step.
 
 ## 2. [REQUIRED] Authoritative artifact register
 
@@ -126,10 +128,10 @@ NOT_APPLICABLE — no incidents.
 
 ## 7. [REQUIRED] Resume instruction
 
-- **Next allowed action:** **Continue Stage 3/5 implementation autonomously** — FR-3 extraction flow (now integrating authoritative business config for durations/timezones), FAQ knowledge service, admin business-config routes, customer records, Stage 4 eval harness (tracking SEC-F7). No human gate until the next genuine boundary. **BLOCKED (awaiting owner, non-gating):** runtime `.env` secrets (`SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`, `SUPABASE_DB_CA_CERT_PATH`, `TOKEN_HASH_SECRET`) for pg-repo live contract tests, TC-33/TC-11/TC-35 role evidence, and app startup vs the real DB. Candidate migration `0007` (FK indexes) needs renewed authorization.
+- **Next allowed action:** Commit verified voice repair, then review/correct required grants in Google integration migration 0007; CLI dry-run must show only 0007 before authorized application and live read-only verification. Do not implement future features.
 - **G01 status:** PASS — decision recorded 2026-10-24 in §5, bound to PROJECT/PLAN/TESTING v0.2. Q1 resolved (Supabase, platform-only approval). Q4 deferred to G02 (now presented in ADR-0006).
 - **After G02 approval:** record decision in §5 ledger → Stage 3 backend foundation (scaffold + migrations per approved design; first-migration application needs its own action authorization per PLAN §4).
-- **Blocking dependencies (independent of G01):** real Calendar work blocked pending credentials/authorization (U2/Q3); any paid cloud provider activation / real credential entry / real customer-data egress requires its own 05 authorization (SEC-15).
+- **Remaining gates:** secure Google credential configuration needs owner authorization; Google consent is owner-completed; real Calendar writes need separate Q3 naming a dedicated test calendar. Live STT needs sufficient RAM; do not lower admission gates. SEC-F7 remains open.
 - **On resume, load:** this register (control §1, unknowns §3, evidence §4); skill governance is distilled and does not need re-reading unless invalidated; ai-capabilities SKILL/RULES when AI stages begin.
 - **Freshness comparisons:** verify workspace contents and git state match §8 record; re-verify Ollama/Supabase identity before dependent stages reuse this evidence.
 

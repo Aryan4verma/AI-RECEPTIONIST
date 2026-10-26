@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CallEngine, type CallState, type RecorderHandle, type AnalyserHandle, type SpeechHandle } from "./engine";
 import { api, postAudio } from "../lib/api";
+import { createRecorder } from "./recorder";
 
 /* ---- Real browser adapters ---- */
 
@@ -8,37 +9,15 @@ function openMic(): Promise<{ stream: MediaStream; recorder: RecorderHandle; ana
   return navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
   }).then((stream) => {
+    let ctx: AudioContext | undefined;
+    try {
     const mime = typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
     const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-    const chunks: Blob[] = [];
-    rec.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data);
-    let stopping: Promise<Blob> | null = null;
-    const recorder: RecorderHandle = {
-      start: () => {
-        if (rec.state === "inactive") rec.start(250);
-      },
-      pause: () => {
-        if (rec.state === "recording") rec.pause();
-      },
-      resume: () => {
-        if (rec.state === "paused") rec.resume();
-      },
-      stop: () => {
-        stopping ??= new Promise<Blob>((resolve) => {
-          if (rec.state === "inactive") {
-            resolve(new Blob(chunks, { type: mime || "audio/webm" }));
-            return;
-          }
-          rec.onstop = () => resolve(new Blob(chunks, { type: mime || "audio/webm" }));
-          rec.stop();
-        });
-        return stopping;
-      },
-      isSupported: () => true,
-    };
+    const recorder = createRecorder(rec);
 
     const Ctx: typeof AudioContext = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new Ctx();
+    ctx = new Ctx();
+    const audioContext = ctx;
     const src = ctx.createMediaStreamSource(stream);
     const node = ctx.createAnalyser();
     node.fftSize = 512;
@@ -51,13 +30,19 @@ function openMic(): Promise<{ stream: MediaStream; recorder: RecorderHandle; ana
         for (let i = 0; i < buf.length; i++) { const v = buf[i] ?? 0; sum += v * v; }
         return Math.sqrt(sum / buf.length);
       },
-      close: () => void ctx.close().catch(() => undefined),
+      close: () => { src.disconnect(); node.disconnect(); void audioContext.close().catch(() => undefined); },
     };
     return { stream, recorder, analyser };
+    } catch (error) {
+      stream.getTracks().forEach((track) => track.stop());
+      void ctx?.close().catch(() => undefined);
+      throw error;
+    }
   });
 }
 
-function makeSpeech(): SpeechHandle {
+export function makeSpeech(): SpeechHandle {
+  let finish: (() => void) | null = null;
   return {
     speak: (text: string) =>
       new Promise<void>((resolve) => {
@@ -71,15 +56,21 @@ function makeSpeech(): SpeechHandle {
         const done = () => {
           if (!settled) {
             settled = true;
+            finish = null;
             resolve();
           }
         };
         u.onend = done;
         u.onerror = done;
+        finish?.();
         speechSynthesis.cancel();
+        finish = done;
         speechSynthesis.speak(u);
       }),
-    cancel: () => speechSynthesis?.cancel(),
+    cancel: () => {
+      if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+      finish?.(); // browsers do not consistently emit onend after cancel()
+    },
   };
 }
 
@@ -125,8 +116,9 @@ export function useCallEngine() {
   const start = useCallback(() => {
     // engine.start() flips to "connecting" synchronously — surface it at once
     // so the stage reflects the call beginning while permission is pending.
+    const started = engine.start();
     setState({ ...engine.getState() });
-    void engine.start().then(() => setState({ ...engine.getState() }));
+    void started.then(() => setState({ ...engine.getState() }));
   }, [engine]);
   const end = useCallback(() => {
     void engine.end().then(() => setState({ ...engine.getState() }));

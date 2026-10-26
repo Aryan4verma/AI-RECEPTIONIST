@@ -81,7 +81,8 @@ export class ExtractionService {
       'Respond only with JSON matching: {"schema_version":1,"customer_name":{...},"contact":{...},"purpose":{...},"requested_time":{...},"duration_minutes":{...},"meeting_type":{...},"notes":"..."} ' +
       'where each detail object is {"state":"known","value":X} or {"state":"unknown","reason":"..."} or {"state":"ambiguous","reason":"...","candidates":["..."]}. ' +
       "Only report values the customer actually provided in THIS message plus earlier context given to you. " +
-      "Dates must be absolute ISO 8601 timestamps. Never invent values.";
+      "Dates must be absolute ISO 8601 timestamps. Never invent values. " +
+      "customer_name and contact must be exact customer-provided phrases; if not explicitly supplied, mark unknown.";
     const context = current
       ? `Previously collected context (JSON): ${JSON.stringify(current)}\n\nNew customer message: ${utterance}`
       : utterance;
@@ -99,7 +100,19 @@ export class ExtractionService {
       // Malformed/refused extraction → keep prior state, ask again (never guess).
       return current ?? emptyExtraction();
     }
-    return this.merge(current, outcome.value);
+    const extracted = outcome.value;
+    // Small local models can fill identity slots with placeholders. Require
+    // source evidence before those values can enter durable booking state.
+    for (const field of ["customer_name", "contact"] as const) {
+      const incoming = extracted[field];
+      const previous = current?.[field];
+      if (incoming.state === "known" &&
+          !(previous?.state === "known" && previous.value === incoming.value) &&
+          !utterance.toLocaleLowerCase().includes(incoming.value.toLocaleLowerCase())) {
+        extracted[field] = { state: "unknown", reason: "Not provided by the customer" };
+      }
+    }
+    return this.merge(current, extracted);
   }
 
   /** Backend-owned merge: known values are sticky; unknowns fill from the turn. */

@@ -2,6 +2,12 @@
 
 Status: backend feature-complete for the frontend phase; **not** declared production-ready (see Limitations).
 
+## Current continuation — 2026-10-26
+
+Voice repair from baseline `0d99e8c`: recorder state resets between turns (regression proves distinct uploaded bytes/transcripts), bounded contextual property enquiries, source checks for preferences and booking identities, audio handoff status, empty-speech retry, noise/mute limits and TTS cancellation. Verification: backend 234/234 (excluding live suites and known stale migration-verifier fixture), frontend 16/16, both builds/typechecks, real local qwen3:1.7b synthetic dialogue PASS. Live STT BLOCKED at 1.19 GB free versus 1.5 GB script gate; actual microphone/echo/barge-in not verified.
+
+Owner conditionally authorized only Google migration `20261025000007_google_integration.sql` on `ogxdszjypswutekqgorb` via CLI (2026-10-26), after tested voice commit/security review. Review grants, confirm no unrelated pending migrations, apply and verify. Keep mock Calendar; no OAuth secret access or Google API calls. See PROGRESS §1/§7 for current authority; older stage text is historical.
+
 ## Local startup
 
 ```bash
@@ -42,7 +48,7 @@ Speech sidecar starts on demand (RAM-gated); Python venv: `sidecar/whisper/.venv
 - **Real STT unmeasured** — RAM-gated (BLOCKED at ~0.5–0.9 GB free vs 1.5 GB gate); script ready (`scripts/speech-live-test.mjs`).
 - **Real Google Calendar: NOT activated** — Q3 authorization pending (OAuth creds + test calendar). Mock adapter is the active provider.
 - **SEC-F7 open**: qwen3:1.7b adopts injected intents (2/2 probes; no execution path exists — backend decides everything).
-- Migration 0007 (FK indexes) and any cloud-provider activation await separate owner authorization.
+- Migration 0007 is the Google integration singleton table (not FK indexes); conditional application authorization recorded above. Cloud-provider activation remains separately gated.
 - Single active conversation; single-process deployment on the dev laptop.
 
 ## Frontend phase (frontend-master skill)

@@ -63,6 +63,7 @@ export interface RecorderHandle {
   resume(): void;
   /** Stop and resolve the captured audio blob. */
   stop(): Promise<Blob>;
+  dispose?(): void;
   isSupported(): boolean;
 }
 
@@ -118,7 +119,6 @@ export class CallEngine {
   private nextId = 1;
   private mic: Awaited<ReturnType<CallEngineDeps["openMic"]>> | null = null;
   private stopped = true;
-  private startedAt = 0; // ms, listening window start
   private speechStartedAt: number | null = null;
   private lastVoiceAt = 0;
   private bargeStart: number | null = null;
@@ -171,16 +171,18 @@ export class CallEngine {
   /** Drive time-based logic; the UI calls this on a ~90ms loop. */
   tick(nowMs: number): void {
     if (this.stopped) return;
-    const lvl = this.mic?.analyser.level() ?? 0;
+    const lvl = this.state.muted ? 0 : this.mic?.analyser.level() ?? 0;
     if (this.state.status === "listening") {
       this.set({ level: Math.min(1, lvl * 6) });
       if (lvl >= VOICE_RMS) {
         this.speechStartedAt ??= nowMs;
         this.lastVoiceAt = nowMs;
+      } else if (this.speechStartedAt !== null && this.lastVoiceAt - this.speechStartedAt < MIN_SPEECH_MS) {
+        this.speechStartedAt = null; // isolated noise blips do not accumulate into speech
       }
       const spokeFor = this.speechStartedAt !== null && this.lastVoiceAt - this.speechStartedAt >= MIN_SPEECH_MS;
       const silenceDone = spokeFor && nowMs - this.lastVoiceAt >= SILENCE_MS;
-      const tooLong = nowMs - this.startedAt >= MAX_TURN_MS && this.lastVoiceAt > 0 && nowMs - this.lastVoiceAt >= 300;
+      const tooLong = spokeFor && this.speechStartedAt !== null && nowMs - this.speechStartedAt >= MAX_TURN_MS;
       if (silenceDone || tooLong) {
         this.speechStartedAt = null;
         void this.finishTurn(this.listenEpoch);
@@ -248,6 +250,7 @@ export class CallEngine {
   }
 
   private async cleanupMic() {
+    this.mic?.recorder.dispose?.();
     this.mic?.stream.getTracks().forEach((t) => t.stop());
     this.mic?.analyser.close();
     this.mic = null;
@@ -283,7 +286,6 @@ export class CallEngine {
     this.set({ status: "listening", level: 0 });
     this.speechStartedAt = null;
     this.lastVoiceAt = 0;
-    this.startedAt = this.lastTickTime();
     const rec = this.mic?.recorder;
     if (!rec || !rec.isSupported()) {
       this.set({
@@ -296,13 +298,8 @@ export class CallEngine {
       rec.resume();
       rec.start();
     } catch {
-      /* already recording */
+      this.set({ status: "error", note: "Microphone recording couldn't start. Please try again." });
     }
-  }
-
-  /** Anchor for startedAt when no tick clock is available (real clock). */
-  private lastTickTime(): number {
-    return typeof performance !== "undefined" ? performance.now() : Date.now();
   }
 
   /** Stop capture, send the audio, speak the reply, listen again. */
@@ -340,8 +337,12 @@ export class CallEngine {
       await this.speakThenListen(r.reply);
     } catch (err) {
       if (this.stopped || epoch !== this.listenEpoch) return;
+      this.set({ transcript: this.state.transcript.filter((turn) => turn.text !== "…") });
       const code = (err as { code?: string })?.code ?? "";
-      if (STT_DOWN_CODES.has(code)) {
+      if (code === "NO_SPEECH") {
+        this.set({ note: "No speech was detected. Please try speaking again." });
+        this.listen();
+      } else if (STT_DOWN_CODES.has(code)) {
         this.set({
           status: "unavailable",
           note:
