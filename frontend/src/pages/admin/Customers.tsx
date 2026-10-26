@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { adminApi, type Customer } from "../../lib/admin";
 import { ApiError } from "../../lib/api";
-import { Badge, Button, EmptyState, ErrorNote, Field, Input, Modal, PageHeading, Spinner, Textarea } from "../../components/ui";
+import { Badge, Button, EmptyState, ErrorNote, Field, Input, Modal, PageHeading, Spinner, Textarea, SearchField, LoadingState } from "../../components/ui";
 import { relativeTime } from "../../lib/format";
 
 export default function Customers() {
@@ -12,9 +12,11 @@ export default function Customers() {
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
   const [confirmAnon, setConfirmAnon] = useState<Customer | null>(null);
+  const [details, setDetails] = useState<Customer | null>(null);
 
   async function refresh() {
     if (!user) return;
+    setError(null);
     try {
       const r = await adminApi.customers(user.token);
       setCustomers(r.customers);
@@ -39,52 +41,43 @@ export default function Customers() {
     <>
       <PageHeading
         title="Customers"
-        sub="People the receptionist has collected details for."
+        sub="Every relationship starts with a little context. Keep it here."
         actions={<Button onClick={() => setAdding(true)}>Add customer</Button>}
       />
       {error && <ErrorNote onRetry={refresh}>{error}</ErrorNote>}
-      {customers === null ? (
-        <div className="flex justify-center py-24 text-ink-3"><Spinner /></div>
-      ) : filtered.length === 0 ? (
-        <EmptyState
-          title={query ? "No matching customers" : "No customers yet"}
-          body={query ? "Try a different search." : "Customers appear here as the receptionist collects their details."}
-        />
-      ) : (
-        <div className="overflow-hidden rounded-card border border-line bg-surface">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search name, email, or phone…"
-            aria-label="Search customers"
-            className="w-full border-b border-line px-4 py-2.5 text-sm outline-none placeholder:text-ink-3/70"
-          />
+      {customers === null ? (!error && <LoadingState label="Loading customers" />) : (
+        <section className="collection" aria-label="Customer directory">
+          <div className="collection-toolbar"><SearchField value={query} onChange={setQuery} placeholder="Name, email or phone" label="Search customers" /><p className="text-xs text-ink-3">{filtered.length} of {customers.length} customers</p></div>
+          {filtered.length === 0 ? <EmptyState title={query ? "No matching customers" : "A place for your customers"} body={query ? "Try another search. Your directory is unchanged." : "Add a customer, or let the receptionist collect their details during a conversation."} /> :
           <ul className="divide-y divide-line">
             {filtered.map((c) => (
-              <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
-                <div className="min-w-0">
+              <li key={c.id} className="record-row">
+                <div className="record-identity"><span className="record-avatar" aria-hidden="true">{c.displayName === "[deleted customer]" ? "—" : c.displayName.trim().slice(0, 1).toUpperCase()}</span><div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-ink">
                     {c.displayName === "[deleted customer]" ? <span className="text-ink-3 italic">Deleted customer</span> : c.displayName}
                   </p>
-                  <p className="truncate text-[13px] text-ink-2">
+                  <p className="record-meta">
                     {[c.contactEmail, c.contactPhone].filter(Boolean).join(" · ") || "No contact details"}
                   </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {c.notes && <span className="hidden max-w-40 truncate text-xs text-ink-3 sm:block" title={c.notes}>{c.notes}</span>}
+                </div></div>
+                <div className="record-actions">
+                  <Button size="sm" variant="secondary" onClick={() => setDetails(c)}>Details</Button>
                   {c.displayName !== "[deleted customer]" && (
-                    <Button size="sm" variant="danger" onClick={() => setConfirmAnon(c)}>
-                      Delete
+                    <Button size="sm" variant="ghost" className="text-danger-fg" onClick={() => setConfirmAnon(c)}>
+                      Anonymize
                     </Button>
                   )}
                 </div>
               </li>
             ))}
-          </ul>
-        </div>
+          </ul>}
+        </section>
       )}
 
       <AddModal open={adding} onClose={() => setAdding(false)} onDone={refresh} token={user?.token ?? ""} />
+      <Modal open={details !== null} onClose={() => setDetails(null)} title={details?.displayName === "[deleted customer]" ? "Anonymized customer" : details?.displayName ?? "Customer details"} variant="drawer" sub="Customer information held by your receptionist.">
+        {details && <dl className="space-y-6">{[["Email", details.contactEmail], ["Phone", details.contactPhone], ["Notes", details.notes], ["Customer ID", details.id]].map(([label, value]) => <div key={label}><dt className="section-kicker mb-2">{label}</dt><dd className="m-0 whitespace-pre-wrap text-sm leading-relaxed [overflow-wrap:anywhere]">{value || "Not provided"}</dd></div>)}</dl>}
+      </Modal>
       <AnonModal
         customer={confirmAnon}
         onClose={() => setConfirmAnon(null)}
@@ -105,6 +98,7 @@ function AddModal({ open, onClose, onDone, token }: { open: boolean; onClose: ()
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!name.trim()) { setError("Enter a customer name."); return; }
     setBusy(true);
     setError(null);
     try {
@@ -125,17 +119,17 @@ function AddModal({ open, onClose, onDone, token }: { open: boolean; onClose: ()
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Add customer"
+    <Modal open={open} onClose={onClose} dismissible={!busy} title="Add a customer" sub="A few details now make every future conversation more personal."
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button type="submit" form="add-customer" loading={busy}>Save</Button>
         </>
       }>
-      <form id="add-customer" onSubmit={submit} className="space-y-3.5">
-        <Field label="Name" htmlFor="c-name"><Input id="c-name" required value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <Field label="Email" htmlFor="c-email" hint="Optional"><Input id="c-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
-        <Field label="Phone" htmlFor="c-phone" hint="Optional"><Input id="c-phone" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
+      <form id="add-customer" onSubmit={submit} className="space-y-5">
+        <Field label="Name" htmlFor="c-name"><Input id="c-name" autoComplete="name" required value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        <Field label="Email" htmlFor="c-email" hint="Optional"><Input id="c-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+        <Field label="Phone" htmlFor="c-phone" hint="Optional"><Input id="c-phone" type="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
         <Field label="Notes" htmlFor="c-notes" hint="Optional"><Textarea id="c-notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
         {error && <ErrorNote>{error}</ErrorNote>}
       </form>
@@ -166,11 +160,12 @@ function AnonModal({ customer, onClose, onDone, token }: { customer: Customer | 
     <Modal
       open={customer !== null}
       onClose={onClose}
-      title="Delete customer?"
+      title="Anonymize personal details?"
+      dismissible={!busy}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>Keep</Button>
-          <Button variant="danger" loading={busy} onClick={doAnon}>Delete & anonymize</Button>
+          <Button variant="secondary" disabled={busy} onClick={onClose}>Keep customer</Button>
+          <Button variant="danger" loading={busy} onClick={doAnon}>Anonymize details</Button>
         </>
       }
     >

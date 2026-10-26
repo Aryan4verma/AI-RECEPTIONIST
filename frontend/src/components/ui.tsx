@@ -1,4 +1,5 @@
-import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, useEffect } from "react";
+import { cloneElement, isValidElement, type ReactElement, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, useEffect, useId, useRef } from "react";
+import { IconSearch, IconChat } from "./icons";
 
 /* ---------- Button ---------- */
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -9,12 +10,12 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 export function Button({ variant = "primary", size = "md", loading, className = "", children, disabled, ...rest }: ButtonProps) {
   const base =
-    "inline-flex max-w-full items-center justify-center gap-2 rounded-full font-semibold leading-5 transition-all duration-150 select-none " +
+    "inline-flex max-w-full items-center justify-center gap-2 rounded-lg font-semibold leading-5 transition-all duration-150 select-none " +
     "disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-px";
   const sizes = {
-    sm: "px-3.5 py-1.5 text-[13px]",
-    md: "px-4.5 py-2.5 text-sm",
-    lg: "px-6 py-3 text-[15px]",
+    sm: "min-h-9 px-3 py-1.5 text-[13px]",
+    md: "min-h-11 px-4 py-2.5 text-sm",
+    lg: "min-h-12 px-6 py-3 text-[15px]",
   }[size];
   const variants = {
     primary: "bg-pine-700 text-[#f4f1e8] shadow-card hover:bg-pine-800 hover:shadow-slip",
@@ -23,7 +24,7 @@ export function Button({ variant = "primary", size = "md", loading, className = 
     ghost: "text-ink-2 hover:text-ink hover:bg-pine-50",
   }[variant];
   return (
-    <button className={`${base} ${sizes} ${variants} ${className}`} disabled={disabled || loading} {...rest}>
+    <button type="button" aria-busy={loading || undefined} className={`${base} ${sizes} ${variants} ${className}`} disabled={disabled || loading} {...rest}>
       {loading && <Spinner className="size-4" />}
       {children}
     </button>
@@ -46,7 +47,7 @@ export function Card({ className = "", children }: { className?: string; childre
 
 export function CardHead({ title, sub, actions }: { title: string; sub?: string; actions?: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
+    <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-5 sm:px-6">
       <div className="min-w-0 flex-1">
         <h2 className="type-h2 text-ink">{title}</h2>
         {sub && <p className="mt-1 text-xs leading-relaxed text-ink-3">{sub}</p>}
@@ -76,7 +77,7 @@ export function Badge({ tone = "neutral", children }: { tone?: "success" | "warn
     neutral: "bg-canvas text-ink-2 border-line-strong",
     accent: "bg-pine-50 text-pine-700 border-pine-200",
   }[tone];
-  return <span className={`inline-flex max-w-full shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[11.5px] font-semibold leading-5 ${tones}`}>{children}</span>;
+  return <span className={`status-label inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium leading-5 ${tones}`}><span className="size-1.5 shrink-0 rounded-full bg-current opacity-70" aria-hidden="true" />{children}</span>;
 }
 
 /* ---------- Field / Input ---------- */
@@ -93,14 +94,22 @@ export function Field({
   children: ReactNode;
   htmlFor?: string;
 }) {
+  const generatedId = useId();
+  const controlId = htmlFor ?? generatedId;
+  const descriptionId = `${controlId}-description`;
+  const control = isValidElement(children) ? cloneElement(children as ReactElement<{ id?: string; "aria-describedby"?: string; "aria-invalid"?: boolean }>, {
+    id: controlId,
+    "aria-describedby": hint || error ? descriptionId : undefined,
+    "aria-invalid": error ? true : undefined,
+  }) : children;
   return (
-    <div className="space-y-1.5">
-      <label htmlFor={htmlFor} className="block text-[12.5px] font-semibold text-ink-2">
+    <div className="min-w-0 space-y-2">
+      <label htmlFor={controlId} className="block text-[13px] font-semibold text-ink">
         {label}
       </label>
-      {children}
-      {hint && !error && <p className="text-xs text-ink-3">{hint}</p>}
-      {error && <p className="text-xs text-danger-fg" role="alert">{error}</p>}
+      {control}
+      {hint && !error && <p id={descriptionId} className="text-xs leading-relaxed text-ink-3">{hint}</p>}
+      {error && <p id={descriptionId} className="text-xs leading-relaxed text-danger-fg" role="alert">{error}</p>}
     </div>
   );
 }
@@ -108,7 +117,7 @@ export function Field({
 export function Input({ className = "", ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
-      className={`w-full rounded-lg border border-line-strong bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-3/70 focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-600/15 ${className}`}
+      className={`field-control ${className}`}
       {...rest}
     />
   );
@@ -117,7 +126,7 @@ export function Input({ className = "", ...rest }: InputHTMLAttributes<HTMLInput
 export function Textarea({ className = "", ...rest }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
-      className={`w-full rounded-lg border border-line-strong bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-3/70 focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-600/15 ${className}`}
+      className={`field-control min-h-24 resize-y ${className}`}
       {...rest}
     />
   );
@@ -144,20 +153,21 @@ export function ErrorNote({ children, onRetry }: { children: ReactNode; onRetry?
 
 export function EmptyState({ icon, title, body }: { icon?: ReactNode; title: string; body?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-card border border-dashed border-line-strong bg-surface/60 px-6 py-14 text-center">
-      {icon && <div className="text-ink-3">{icon}</div>}
-      <p className="font-display text-lg text-ink">{title}</p>
-      {body && <p className="max-w-sm text-sm text-ink-2">{body}</p>}
+    <div className="empty-state">
+      <div className="empty-state-mark" aria-hidden="true">{icon ?? <IconChat className="size-5" />}</div>
+      <h2 className="font-display text-2xl tracking-tight text-ink">{title}</h2>
+      {body && <p className="max-w-sm text-sm leading-relaxed text-ink-3">{body}</p>}
     </div>
   );
 }
 
 export function PageHeading({ title, sub, actions }: { title: string; sub?: string; actions?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-      <div>
+    <div className="page-heading">
+      <div className="min-w-0 max-w-2xl">
+        <p className="section-kicker mb-3">Your workspace</p>
         <h1 className="type-h1 text-ink">{title}</h1>
-        {sub && <p className="mt-1 text-sm text-ink-2">{sub}</p>}
+        {sub && <p className="mt-2 max-w-xl text-sm leading-relaxed text-ink-3">{sub}</p>}
       </div>
       {actions}
     </div>
@@ -171,34 +181,47 @@ export function Modal({
   title,
   children,
   footer,
+  sub,
+  variant = "modal",
+  dismissible = true,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
   footer?: ReactNode;
+  sub?: string;
+  variant?: "modal" | "drawer";
+  dismissible?: boolean;
 }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    const dialog = ref.current;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialog?.showModal();
+    return () => {
+      dialog?.close();
+      document.body.style.overflow = previousOverflow;
+      if (previous?.isConnected) previous.focus();
+    };
+  }, [open]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-pine-950/40 backdrop-blur-[2px]" onClick={onClose} aria-hidden="true" />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="relative w-full max-w-md rounded-card border border-line bg-raised p-6 shadow-pop rise"
-      >
-        <h2 className="font-display text-xl text-ink">{title}</h2>
-        <div className="mt-3 text-sm text-ink-2">{children}</div>
-        {footer && <div className="mt-5 flex justify-end gap-2">{footer}</div>}
+    <dialog ref={ref} aria-labelledby={titleId} className={`app-dialog ${variant === "drawer" ? "app-drawer" : "app-modal"}`} onCancel={(event) => { event.preventDefault(); if (dismissible) onClose(); }} onClick={(event) => {
+      const rect = event.currentTarget.getBoundingClientRect();
+      if (dismissible && event.target === event.currentTarget && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) onClose();
+    }}>
+      <div className="dialog-header">
+        <div className="min-w-0"><p className="section-kicker mb-2">Cleardesk console</p><h2 id={titleId} className="font-display text-2xl tracking-tight text-ink">{title}</h2>{sub && <p className="mt-2 text-sm leading-relaxed text-ink-3">{sub}</p>}</div>
+        <button type="button" className="dialog-close" onClick={onClose} disabled={!dismissible} aria-label={`Close ${title}`}>×</button>
       </div>
-    </div>
+      <div className="dialog-body">{children}</div>
+      {footer && <div className="dialog-footer">{footer}</div>}
+    </dialog>
   );
 }
 
@@ -214,8 +237,20 @@ export function Toast({ tone, children, onClose }: { tone: "info" | "error" | "s
     success: "bg-success-fg text-white",
   }[tone];
   return (
-    <div className={`pointer-events-auto fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-xl px-4 py-2.5 text-sm font-medium shadow-pop rise ${tones}`} role="status">
+    <div className={`pointer-events-auto fixed bottom-5 left-1/2 z-[60] w-max max-w-[calc(100%_-_2rem)] -translate-x-1/2 rounded-xl px-4 py-3 text-sm font-medium shadow-pop rise ${tones}`} role={tone === "error" ? "alert" : "status"}>
       {children}
     </div>
   );
+}
+
+export function LoadingState({ label = "Loading workspace" }: { label?: string }) {
+  return <div role="status" className="loading-state"><span className="sr-only">{label}</span><div className="space-y-5" aria-hidden="true">{[1, 2, 3].map(n => <div key={n} className="flex items-center gap-4"><span className="skeleton size-11 rounded-xl" /><span className="flex-1 space-y-2"><span className="skeleton block h-3 w-1/3 rounded" /><span className="skeleton block h-2.5 w-2/3 rounded" /></span></div>)}</div></div>;
+}
+
+export function SearchField({ value, onChange, placeholder = "Search", label = "Search records" }: { value: string; onChange: (value: string) => void; placeholder?: string; label?: string }) {
+  return <div className="relative min-w-0 flex-1 sm:max-w-sm"><IconSearch className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-3" /><Input aria-label={label} type="search" value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} className="!pl-10" /></div>;
+}
+
+export function FilterButtons<T extends string>({ value, onChange, options, label }: { value: T; onChange: (value: T) => void; options: { value: T; label: string }[]; label: string }) {
+  return <div className="filter-buttons" role="group" aria-label={label}>{options.map(option => <button type="button" key={option.value} aria-pressed={value === option.value} onClick={() => onChange(option.value)}>{option.label}</button>)}</div>;
 }

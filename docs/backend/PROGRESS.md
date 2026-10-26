@@ -6,7 +6,7 @@
 | Document ID | PROGRESS |
 | Version / date | v0.8 — 2026-10-26 |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner (name not recorded — pending) |
-| Scope | Cleardesk backend, AI and existing frontend; current work is focused voice repair and Google integration migration 0007. Historical stage rows below retain their original evidence. |
+| Scope | Cleardesk backend, AI and existing frontend; current work is the owner-authorized premium frontend redesign. Historical stage rows below retain their original evidence. |
 | Document lifecycle | draft (living register; sections updated per stage) |
 | Input provenance | Human master execution prompt (project owner, 2026-10-23); Stage 0 discovery evidence recorded in §8 |
 | Related authoritative files | Skill entry points (read-only, outside repository): `C:\Users\sv178\OneDrive\Desktop\.agents\skills\backend-skill\backend-production\SKILL.md`, `C:\Users\sv178\OneDrive\Desktop\.agents\skills\ai-capabilities\SKILL.md` |
@@ -14,11 +14,11 @@
 
 ## 1. [REQUIRED] Control and current task
 
-- **Task ID / mode:** Voice repair + migration 0007; autonomous inside owner-approved scope.
-- **Current phase:** Focused frontend/admin polish after successful owner OAuth; voice repair `00479a0` and applied migration 0007 remain intact. No broad redesign or new features authorized.
+- **Task ID / mode:** Premium frontend redesign; autonomous inside owner-approved scope.
+- **Current phase:** Premium redesign of existing admin/customer surfaces; voice repair `00479a0`, applied migration 0007 and successful owner OAuth remain intact. No new backend features authorized.
 - **Completed repair (based on `0d99e8c`):** per-turn recorder bytes/promises reset; pending-stop guard and cleanup; noise/mute/long-turn handling; reliable TTS cancellation; contextual property enquiry routing and source-checked preference extraction; reject invented booking name/contact; audio handoff state and empty-speech handling corrected. No UI redesign, cloud inference or RAM-gate change.
 - **Inspected revision / environment:** branch `main`, tracking `origin/main`. Environment facts in §8 unchanged.
-- **Current authorization:** Owner's focused frontend fixes/polish request permits implementation, responsive verification, commit and normal push. OAuth was completed by the owner. No current DDL, real Calendar event writes, cloud inference changes, broad redesign or new features authorized; keep mock mode. Prior migration authorization/evidence remains historical below.
+- **Current authorization:** Owner's attached premium frontend redesign brief permits existing-surface implementation, responsive verification, commit and normal push. OAuth was completed by the owner. No current DDL, real Calendar event writes, cloud inference changes or unrelated features authorized; keep mock mode. Prior migration authorization/evidence remains historical below.
 
 **Voice verification, 2026-10-26:** 234 backend tests PASS before migration work, 16 frontend tests PASS, backend typecheck/build and frontend build PASS. Two-turn recorder regression FAILS with original adapter (first utterance submitted twice), PASSES with fix. Real local qwen3:1.7b synthetic dialogue PASS including 3BHK → 80 lakh context → site visit asking for missing name. Earlier live reruns exposed greeting misclassification and invented identity; routing and identity-evidence guards now cover both. STT script BLOCKED at 1.19 GB free / 1.5 GB gate. Genuine microphone capture, acoustic echo/barge-in and end-to-end live audio remain unverified.
 
@@ -136,8 +136,8 @@ NOT_APPLICABLE — no incidents.
 
 ## 7. [REQUIRED] Resume instruction
 
-- **Latest frontend milestone (2026-10-26):** Calendar Connected/Owner state observed in the live authenticated Overview. Calendar card min-content overflow reproduced (792px right column and global scrollbar), then fixed with minmax(0,…) grid tracks, bounded metadata, copy/full-ID controls, and natural card heights. Desktop recent list moved below appointments to remove wasted space. Shared typography, button weights, muted-text contrast, image fallback/recovery and customer long-text/helper wrapping polished. Copy/paste and failed→loaded image recovery verified in browser. Overview has no page-level horizontal overflow at 320/390/768/1280px; landing/chat/call entry inspected; temporary chat ended without sending messages or starting microphone capture. Frontend 16/16 tests and TypeScript/Vite build PASS. No backend/API/DB changes or Google mutations; mock mode preserved. Detailed continuation: HANDOFF current section.
-- **Next action:** Owner reviews this focused polish and supplies any later redesign scope. Live voice microphone/STT remains unverified under unchanged RAM gates. Real Google event writes remain separately Q3-gated. Do not start additional features.
+- **Latest frontend milestone (2026-10-26):** Premium shared system and all existing admin/customer surfaces redesigned. Flat operational lists, search/filters, native focus-managed dialogs/drawers, labelled fields, guarded unsaved settings, corrected duration validation, honest model availability and lazy admin routes implemented. Calendar Connected/Owner and copy/full-ID controls preserved. Frontend **22/22 tests** and TypeScript/Vite build PASS. Representative live checks across 1440/1280/768/375/320px cover all screens; no observed page overflow. Keyboard focus/Escape/return, empty search recovery, invalid settings blocking, draft discard and local model prefill verified. No customer/appointment records were available for populated/destructive-path verification; none seeded. One additional anonymous chat opened/ended without messages. No backend contracts, configuration/provider/OAuth writes, migrations or Google event mutations; mock mode and voice engine preserved. Detailed evidence/limits: HANDOFF current section.
+- **Next action:** Owner reviews the premium redesign. Live voice microphone/STT remains unverified under unchanged RAM gates. Real Google event writes remain separately Q3-gated. Do not start additional features.
 - **G01 status:** PASS — decision recorded 2026-10-24 in §5, bound to PROJECT/PLAN/TESTING v0.2. Q1 resolved (Supabase, platform-only approval). Q4 deferred to G02 (now presented in ADR-0006).
 - **After G02 approval:** record decision in §5 ledger → Stage 3 backend foundation (scaffold + migrations per approved design; first-migration application needs its own action authorization per PLAN §4).
 - **Remaining gates:** secure Google credential configuration needs owner authorization; Google consent is owner-completed; real Calendar writes need separate Q3 naming a dedicated test calendar. Live STT needs sufficient RAM; do not lower admission gates. SEC-F7 remains open.

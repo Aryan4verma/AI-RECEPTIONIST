@@ -5,14 +5,14 @@ import "./styles.css";
 import Chat from "./pages/customer/Chat";
 
 const Call = lazy(() => import("./pages/customer/Call"));
-import AdminLogin from "./pages/admin/Login";
-import AdminLayout from "./pages/admin/Layout";
-import Overview from "./pages/admin/Overview";
-import Customers from "./pages/admin/Customers";
-import Conversations from "./pages/admin/Conversations";
-import Appointments from "./pages/admin/Appointments";
-import BusinessConfig from "./pages/admin/BusinessConfig";
-import Models from "./pages/admin/Models";
+const AdminLogin = lazy(() => import("./pages/admin/Login"));
+const AdminLayout = lazy(() => import("./pages/admin/Layout"));
+const Overview = lazy(() => import("./pages/admin/Overview"));
+const Customers = lazy(() => import("./pages/admin/Customers"));
+const Conversations = lazy(() => import("./pages/admin/Conversations"));
+const Appointments = lazy(() => import("./pages/admin/Appointments"));
+const BusinessConfig = lazy(() => import("./pages/admin/BusinessConfig"));
+const Models = lazy(() => import("./pages/admin/Models"));
 import { AdminAuthProvider, useAdminAuth } from "./hooks/useAdminAuth";
 
 function AdminGate({ children }: { children: React.ReactNode }) {
@@ -36,6 +36,7 @@ function AdminGate({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <BrowserRouter>
+      <Suspense fallback={<div role="status" className="flex min-h-dvh items-center justify-center bg-canvas text-sm text-ink-3">Opening Cleardesk…</div>}>
       <Routes>
         <Route path="/" element={<Chat />} />
         <Route
@@ -67,6 +68,7 @@ export default function App() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

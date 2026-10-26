@@ -85,9 +85,9 @@ function OfferSlip({
           </p>
           <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
             {ok
-              ? "You're all set. We've saved this appointment — you'll receive a confirmation."
+              ? "Your appointment is saved. You can review its details here."
               : verifying
-                ? "We're double-checking the calendar. Your booking is being verified — you'll be contacted once confirmed. Nothing else is needed from you."
+                ? "Your booking is still being verified. Keep these details for follow-up; this is not yet a confirmed appointment."
                 : cancelled
                   ? "This appointment was cancelled at your request. You can book a new one anytime."
                   : "This time wasn't booked. You can ask for another slot whenever you're ready."}
@@ -411,7 +411,7 @@ export default function Chat() {
     <div className={`bg-canvas ${inConversation ? "flex h-dvh flex-col" : "flex min-h-dvh flex-col"}`}>
       {/* Header */}
       <header className="sticky top-0 z-20 border-b border-line bg-surface/85 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-5 py-3 sm:px-8">
+        <div className={`mx-auto flex w-full items-center justify-between px-5 py-4 ${inConversation ? "max-w-3xl sm:px-6" : "max-w-7xl sm:px-9"}`}>
           <Link to="/" className="flex items-center gap-3 rounded-lg" aria-label="Cleardesk home">
             <Mark />
             <span className="leading-tight">
@@ -472,7 +472,7 @@ export default function Chat() {
 
       {/* Conversation — viewport-locked, transcript anchored to the composer */}
       {phase.kind === "chat" && (
-        <main ref={scrollRef} className="pane-scroll mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-4 sm:px-6">
+        <main ref={scrollRef} className="pane-scroll mx-auto min-h-0 w-full max-w-3xl flex-1 overflow-y-auto px-4 sm:px-6" aria-label="Conversation messages">
           <div className="flex min-h-full flex-col justify-end py-6">
             {restored && messages.length === 0 && (
               <div className="mx-auto mb-4 max-w-md rounded-lg border border-line bg-info-bg px-4 py-3 text-[13px] text-info-fg">
@@ -619,28 +619,26 @@ function Mark({ className = "size-9" }: { className?: string }) {
 function Landing({ onStart, error }: { onStart: () => void; error: string | null }) {
   return (
     <>
-      <main className="paper-texture">
+      <main className="customer-landing">
         {/* Hero — asymmetric editorial split: copy left, photographic vignette right */}
-        <div className="mx-auto grid w-full max-w-6xl items-center gap-12 px-5 pb-10 pt-10 sm:px-8 lg:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)] lg:gap-16 lg:pb-12 lg:pt-12">
+        <div className="mx-auto grid w-full max-w-7xl items-center gap-9 px-5 py-10 sm:px-9 sm:py-14 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:gap-14 lg:py-16">
           <div>
-            <p className="micro flex items-center gap-2 text-pine-700">
-              <IconSparkle className="size-3.5" />
-              The always-on front desk
+            <p className="section-kicker flex items-center gap-2">
+              Your first point of contact
             </p>
             <h1 className="type-hero mt-5 text-ink">
-              Every call answered.
+              A warm welcome.
               <br />
-              <span className="font-display-italic font-normal text-pine-700">Every visitor greeted.</span>
+              <span className="font-display-italic font-normal text-pine-700">A clear next step.</span>
             </h1>
             <p className="mt-5 max-w-md text-[15.5px] leading-relaxed text-ink-2">
-              Cleardesk is your AI receptionist — it answers from your own business knowledge, books and changes
-              appointments in your calendar, and hands over to a person the moment it should.
+              A question, an appointment, a little guidance. Cleardesk helps you find your next step using this business’s saved knowledge, with a human handoff when you need one.
             </p>
 
             {error && <div className="mt-6 w-full max-w-sm"><ErrorNote>{error}</ErrorNote></div>}
 
             <div className="mt-8 flex flex-col items-start gap-4">
-              <Button size="lg" onClick={onStart}>
+              <Button size="lg" className="!rounded-full" onClick={onStart}>
                 Start chatting
                 <span className="flex size-6 items-center justify-center rounded-full bg-white/15" aria-hidden="true">
                   <IconArrowRight className="size-4" />
@@ -651,86 +649,48 @@ function Landing({ onStart, error }: { onStart: () => void; error: string | null
                 className="group inline-flex items-center gap-2 text-[13.5px] font-medium text-ink underline-offset-4 hover:text-pine-700 hover:underline"
               >
                 <IconPhone className="size-4 text-pine-600" />
-                <span className="min-w-0">Prefer to talk? Call the AI receptionist in your browser</span>
+                <span className="min-w-0">Prefer to talk? Start a browser voice conversation</span>
                 <IconArrowRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
               </a>
             </div>
           </div>
 
-          {/* Photographic vignette — a composed product preview, clearly labeled */}
-          <div className="relative hidden lg:block" aria-hidden="true">
-            <Photo src="/images/hero-reception.jpg" className="h-[430px] rounded-[18px] shadow-pop">
-              <div className="absolute inset-0 bg-gradient-to-t from-pine-950/35 via-transparent to-transparent" />
+          <figure className="m-0 min-w-0">
+            <Photo src="/images/hero-reception.jpg" className="h-60 rounded-[20px] shadow-slip sm:h-80 lg:h-[440px]">
+              <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-pine-950/75 to-transparent" />
+              <div className="absolute bottom-6 left-6 right-6 text-white"><p className="mb-3 text-[10px] uppercase tracking-[.2em] text-white/75">Thoughtfully handled</p><p className="max-w-xs font-display text-3xl leading-tight">Every conversation<br /><em className="font-normal text-brass-300">deserves a little care.</em></p></div>
             </Photo>
-
-            {/* Floating cards — both anchored to the left edge, stacked */}
-            <div className="absolute -left-8 top-8 w-64 -rotate-1 rounded-card border border-line bg-surface p-4 shadow-slip">
-              <div className="flex items-start gap-2.5">
-                <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-pine-50 font-display text-[13px] font-semibold text-pine-700">C</div>
-                <div className="rounded-xl rounded-tl-sm border border-line bg-raised px-3.5 py-2 text-[13px] leading-relaxed text-ink">
-                  Good morning — how can I help you today?
-                </div>
-              </div>
-              <div className="mt-2.5 flex justify-end pr-1">
-                <div className="rounded-xl rounded-tr-sm bg-pine-700 px-3.5 py-2 text-[13px] leading-relaxed text-[#f4f1e8]">
-                  I'd like to book a consultation this week
-                </div>
-              </div>
-              <p className="micro mt-2.5 pl-1">Preview · example conversation</p>
-            </div>
-
-            <div className="absolute -left-5 bottom-24 w-64 rotate-1 rounded-card border border-line bg-surface p-4 shadow-slip">
-              <p className="micro flex items-center gap-1.5 text-pine-700">
-                <IconCalendar className="size-3.5" /> Proposed appointment
-              </p>
-              <p className="mt-2 font-display text-[15px] leading-snug text-ink">Friday, 14 November · 10:00</p>
-              <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-pine-100">
-                <div className="h-full w-1/4 rounded-full bg-pine-600" />
-              </div>
-              <p className="mt-1.5 text-[10.5px] font-medium tabular text-ink-3">holds 14:32</p>
-            </div>
-
-            {/* Annotation with arrow toward the booking card */}
-            <p className="absolute -bottom-10 right-6 font-display-italic text-[13.5px] text-ink-2">
-              replies in seconds — even at 2am
-            </p>
-            <svg className="absolute -bottom-7 right-24 h-8 w-16 rotate-[160deg] text-ink-3" viewBox="0 0 56 32" fill="none" aria-hidden="true">
-              <path d="M2 4c14 20 30 24 50 16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="0.5 4" />
-              <path d="M46 16.5 52 20l-4.5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
+            <figcaption className="mt-3 flex items-center justify-between gap-3 text-xs text-ink-3"><span>Text chat & browser voice</span><span className="font-display-italic text-sm">The welcome starts here.</span></figcaption>
+          </figure>
         </div>
 
         {/* Feature cards */}
-        <div className="mx-auto grid w-full max-w-6xl gap-4 px-5 pb-8 sm:grid-cols-3 sm:px-8">
+        <div className="landing-principles mx-auto grid w-full max-w-7xl gap-6 px-5 pb-10 sm:grid-cols-3 sm:px-9">
           {[
             {
               icon: <IconChat className="size-4.5" />,
               title: "Grounded answers",
-              body: "Replies come from your business knowledge — hours, services, FAQs — never invented facts.",
+              body: "Helpful answers based on this business’s saved hours, services and FAQs.",
             },
             {
               icon: <IconCalendar className="size-4.5" />,
-              title: "Real bookings",
-              body: "Appointments are proposed, confirmed by you, and written to the calendar with a verifiable record.",
+              title: "Your time, confirmed",
+              body: "Review a proposed appointment before choosing to confirm it. No booking is made just because you asked.",
             },
             {
               icon: <IconShield className="size-4.5" />,
               title: "Private by default",
-              body: "Conversations aren't recorded unless you allow it, and a person is always one request away.",
+              body: "Audio recording is off by default. Ask for a person whenever you need a human handoff.",
             },
           ].map((f) => (
             <div
               key={f.title}
-              className="group rounded-card border border-line bg-surface p-5 shadow-card transition-shadow hover:shadow-slip"
+              className="border-t border-line pt-6"
             >
               <div className="flex items-start justify-between">
-                <div className="flex size-10 items-center justify-center rounded-full bg-pine-100 text-pine-700">{f.icon}</div>
-                <span className="flex size-7 items-center justify-center rounded-full border border-line-strong text-ink-3 opacity-0 transition-opacity group-hover:opacity-100">
-                  <IconArrowRight className="size-3.5" />
-                </span>
+                <div className="text-pine-600">{f.icon}</div>
               </div>
-              <h3 className="mt-4 font-display text-[16.5px] text-ink">{f.title}</h3>
+              <h3 className="mt-4 font-display text-[21px] tracking-tight text-ink">{f.title}</h3>
               <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-2">{f.body}</p>
             </div>
           ))}
@@ -738,11 +698,9 @@ function Landing({ onStart, error }: { onStart: () => void; error: string | null
       </main>
 
       <footer className="mt-auto border-t border-line bg-surface">
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-5 py-5 sm:px-8">
+        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-5 py-5 sm:px-9">
           <p className="max-w-2xl text-xs leading-relaxed text-ink-2">
-            Handled by an AI receptionist. Conversations aren't recorded unless you allow it — for anything urgent, just
-            ask for a person. Previews on this page are examples; your receptionist answers with your business's real,
-            saved knowledge.
+            You’re chatting with an AI receptionist. Audio recording is off by default. For human help, ask for a person.
           </p>
           <div className="flex items-center gap-4">
             <IconWaveform className="size-6 text-line-strong" />
@@ -776,6 +734,7 @@ function ChatBubble({ message: m }: { message: Message }) {
         </div>
       )}
       <div className={`min-w-0 max-w-[78%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed [overflow-wrap:anywhere] ${mine ? "rounded-br-md bg-pine-700 text-[#f4f1e8]" : "rounded-bl-md border border-line bg-surface text-ink shadow-card"}`}>
+        <p className={`mb-1.5 text-[11px] font-semibold ${mine ? "text-white/80" : "text-pine-600"}`}>{mine ? "You" : "Cleardesk"}</p>
         {m.transcript && mine && (
           <span className="micro mb-1 block !text-[#f4f1e8]/60" title="Transcribed from your voice">
             voice

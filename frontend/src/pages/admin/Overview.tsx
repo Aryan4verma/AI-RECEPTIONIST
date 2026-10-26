@@ -73,10 +73,10 @@ export default function Overview() {
   if (load.state === "error") return <ErrorNote>{load.message}</ErrorNote>;
 
   const escalated = load.conversations.filter((c) => c.status === "escalated");
-  const upcoming = load.appointments
+  const allUpcoming = load.appointments
     .filter((a) => a.status === "confirmed" && new Date(a.scheduled_start).getTime() > Date.now())
-    .sort((x, y) => x.scheduled_start.localeCompare(y.scheduled_start))
-    .slice(0, 5);
+    .sort((x, y) => x.scheduled_start.localeCompare(y.scheduled_start));
+  const upcoming = allUpcoming.slice(0, 5);
   const open = load.conversations.filter((c) => c.status === "active");
   const recent = [...load.conversations]
     .sort((x, y) => +new Date(y.startedAt) - +new Date(x.startedAt))
@@ -87,10 +87,8 @@ export default function Overview() {
       {/* Hero — greeting line + photographic card carrying the REAL configured greeting */}
       <div className="mb-7 grid items-center gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="flex flex-col justify-center">
-          <h1 className="type-h1 text-ink">The front desk today</h1>
-          <p className="mt-1 text-sm text-ink-2">
-            {formatDate(new Date().toISOString())} — everything below is live from your receptionist service.
-          </p>
+          <p className="section-kicker mb-3">{formatDate(new Date().toISOString())} / Your daily brief</p>
+          <h1 className="type-h1 text-ink">At the front desk.</h1>
           <p className="mt-3 max-w-md border-l-2 border-pine-300 pl-3.5 text-[13px] leading-relaxed text-ink-2">
             {load.greeting ? (
               <>
@@ -115,12 +113,12 @@ export default function Overview() {
       </div>
 
       {/* Stat cards — tinted icon tiles, serif numbers, circular arrow */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className="overview-metrics grid grid-cols-2 overflow-hidden rounded-card border border-line bg-surface lg:grid-cols-4">
         <StatCard
           to="/admin/appointments"
           icon={<IconCalendar className="size-4.5" />}
           tileClass="bg-pine-100 text-pine-700"
-          value={upcoming.length}
+          value={allUpcoming.length}
           label="Upcoming appointments"
           hint={upcoming[0] ? `Next ${relativeTime(upcoming[0].scheduled_start)}` : "Confirmed, ahead of now"}
           accent
@@ -235,7 +233,7 @@ export default function Overview() {
                 </div>
                 {c.status === "escalated" ? (
                   <Badge tone="warn">
-                    <IconAlert className="mr-1 size-3" /> Waiting for a person
+                    Waiting for a person
                   </Badge>
                 ) : (
                   <Badge tone={c.status === "active" ? "accent" : "neutral"}>{c.status}</Badge>

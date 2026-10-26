@@ -61,7 +61,7 @@ export default function Call() {
     <div className="flex h-dvh flex-col bg-canvas text-ink">
       {/* Top bar */}
       <header className="border-b border-line bg-surface">
-        <div className="mx-auto flex w-full max-w-md items-center justify-between px-5 py-3.5 sm:max-w-3xl sm:px-8">
+        <div className={`mx-auto flex w-full items-center justify-between px-5 py-3.5 sm:px-8 ${!live && state.status !== "ended" ? "max-w-5xl" : "max-w-3xl"}`}>
           <Link to="/" className="flex items-center gap-3" aria-label="Cleardesk home">
             <span className="flex size-9 items-center justify-center rounded-lg bg-pine-800 font-display text-lg font-semibold text-[#f4f1e8]">
               C
@@ -77,33 +77,32 @@ export default function Call() {
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-md flex-1 flex-col px-5 py-8 sm:max-w-3xl sm:px-8">
+      <main className={`mx-auto flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-5 py-7 sm:px-8 ${!live && state.status !== "ended" ? "max-w-5xl" : "max-w-3xl"}`}>
         {/* Pre-call */}
         {!live && state.status !== "ended" && (
-          <div className="rise flex flex-1 flex-col items-center justify-center gap-6 text-center">
+          <div className="call-intro rise flex-1 py-4 sm:py-8"><div className="flex flex-col items-start gap-6">
             {/* Static concentric orb preview */}
-            <div className="relative flex size-36 items-center justify-center" aria-hidden="true">
+            <div className="relative flex size-28 items-center justify-center" aria-hidden="true">
               <span className="absolute inset-0 rounded-full border border-pine-200" />
               <span className="absolute inset-4 rounded-full border border-pine-100" />
-              <span className="flex size-24 items-center justify-center rounded-full bg-gradient-to-b from-pine-700 to-pine-800 font-display text-3xl font-semibold text-[#f4f1e8] shadow-card">
+              <span className="flex size-20 items-center justify-center rounded-full bg-pine-800 font-display text-3xl font-semibold text-[#f4f1e8] shadow-card">
                 C
               </span>
             </div>
             <div className="max-w-md">
-              <h1 className="type-display text-ink">
-                Call the <span className="font-display-italic text-pine-700">AI receptionist</span>
+              <p className="section-kicker mb-3">Browser voice conversation</p><h1 className="type-h1 text-ink">
+                Let’s talk.<br /><span className="font-display-italic font-normal text-pine-700">At your pace.</span>
               </h1>
               <p className="mt-3 text-[14.5px] leading-relaxed text-ink-2">
-                A continuous voice conversation in your browser — speak naturally, and the receptionist answers out loud.
-                It hears you when you pause, and you can interrupt it anytime.
+                Speak naturally, pause when you’re ready, and hear the receptionist’s reply. You can return to text at any point.
               </p>
               <p className="mt-2 text-xs leading-relaxed text-ink-2">
                 This is a browser voice call over your internet connection — not a phone call to a telephone number.
-                Nothing is recorded unless you allow it.
+                Audio recording stays off unless you allow it.
               </p>
             </div>
             {isSecureContext ? (
-              <Button size="lg" onClick={start}>
+              <Button size="lg" className="!rounded-full" onClick={start}>
                 <IconPhone className="size-4.5" />
                 Start call
               </Button>
@@ -117,10 +116,10 @@ export default function Call() {
                 .
               </div>
             )}
-            <p className="flex items-center gap-1.5 text-[11px] text-ink-3">
+            <p className="flex items-center gap-2 text-xs leading-relaxed text-ink-3">
               <IconShield className="size-3.5" /> Audio goes to your own receptionist service — never a third-party call provider.
             </p>
-          </div>
+          </div><aside className="call-guide"><p className="section-kicker mb-4">A little guidance</p><ol><li><span>01</span><div><strong className="block font-semibold text-ink">Make yourself comfortable</strong>Allow browser microphone access when you start. Headphones can help keep replies clear.</div></li><li><span>02</span><div><strong className="block font-semibold text-ink">One thought at a time</strong>Pause after speaking so the receptionist can process your request.</div></li><li><span>03</span><div><strong className="block font-semibold text-ink">Keep the choice yours</strong>Mute, turn voice output off, or move to text. Appointment confirmation stays deliberate.</div></li></ol><p className="mt-5 border-t border-line pt-5 text-xs leading-relaxed text-ink-3">Voice may be unavailable when the local speech service has insufficient memory. Text chat remains available.</p></aside></div>
         )}
 
         {/* Post-call */}
@@ -157,6 +156,7 @@ export default function Call() {
         {/* In-call */}
         {live && (
           <div className="flex flex-1 flex-col">
+            <h1 className="sr-only">Browser voice conversation</h1>
             {/* Stage */}
             <div className="flex flex-col items-center gap-4 pb-5 pt-1 sm:pt-4">
               <p
@@ -233,7 +233,7 @@ export default function Call() {
                 <p className="border-b border-line px-4 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-3">
                   Live transcript
                 </p>
-                <div ref={transcriptRef} className="pane-scroll flex-1 space-y-2.5 overflow-y-auto px-4 py-3.5">
+                <div ref={transcriptRef} role="log" aria-label="Live call transcript" aria-live="polite" className="pane-scroll flex min-h-32 flex-1 flex-col space-y-3 overflow-y-auto px-4 py-4">
                   {state.transcript.map((m) => (
                     <div
                       key={m.id}
@@ -245,6 +245,7 @@ export default function Call() {
                             : "self-start rounded-2xl rounded-tl-sm border border-line bg-raised px-3.5 py-2 text-ink"
                       }`}
                     >
+                      {m.role !== "system" && <p className={`mb-1 text-[11px] font-semibold ${m.role === "customer" ? "text-white/80" : "text-pine-600"}`}>{m.role === "customer" ? "You" : "Cleardesk"}</p>}
                       {m.text}
                     </div>
                   ))}
@@ -292,7 +293,7 @@ export default function Call() {
                 icon={state.muted ? <IconMicOff className="size-5" /> : <IconMic className="size-5" />}
               />
               <button onClick={() => void end()} aria-label="End call" className="group flex flex-col items-center gap-1.5">
-                <span className="flex size-16 items-center justify-center rounded-full bg-pine-700 text-[#f4f1e8] shadow-pop transition-transform group-hover:scale-105 group-active:scale-95">
+                <span className="flex size-16 items-center justify-center rounded-full bg-danger-fg text-white shadow-card transition-transform group-hover:scale-105 group-active:scale-95">
                   <IconPhoneOff className="size-6" />
                 </span>
                 <span className="text-[11px] font-medium text-ink-2">End call</span>

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { adminApi } from "../../lib/admin";
 import { ApiError } from "../../lib/api";
-import { Button, ErrorNote, Field, Input, PageHeading, Spinner, Textarea, Toast } from "../../components/ui";
+import { Button, ErrorNote, Field, Input, PageHeading, Textarea, Toast, CardHead, LoadingState, Modal } from "../../components/ui";
 
 const CATEGORIES = [
   { id: "business_info", label: "Business info" },
@@ -23,28 +23,39 @@ export default function BusinessConfig() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [pendingCategory, setPendingCategory] = useState<CategoryId | null>(null);
   const [toast, setToast] = useState<{ tone: "success" | "error"; msg: string } | null>(null);
 
   // Forms are only rendered when content is non-null; adapt the setter type.
-  const setContentNonNull: React.Dispatch<React.SetStateAction<Record<string, unknown>>> = setContent as never;
+  const setContentNonNull: React.Dispatch<React.SetStateAction<Record<string, unknown>>> = update => {
+    setDirty(true);
+    setContent(current => typeof update === "function" ? update(current ?? {}) : update);
+  };
 
   useEffect(() => {
     if (!user) return;
     setLoading(true);
+    setContent(null);
     setError(null);
+    let cancelled = false;
     adminApi
       .config(user.token, cat)
       .then((r) => {
+        if (cancelled) return;
         setContent(r.content ?? {});
         setVersion(r.version ?? 0);
+        setDirty(false);
       })
-      .catch((e) => setError(e instanceof ApiError ? e.message : "Failed to load settings."))
-      .finally(() => setLoading(false));
+      .catch((e) => { if (!cancelled) setError(e instanceof ApiError ? e.message : "Failed to load settings."); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [user, cat]);
 
   async function save() {
     if (!user || !content) return;
     setSaving(true);
+    let categorySaved = false;
     try {
       // Hours and Services keep their own category data AND sync generated
       // FAQ entries — FAQs are the receptionist's only retrieval surface, so
@@ -54,6 +65,8 @@ export default function BusinessConfig() {
         : cat === "services" ? servicesFaqs(content)
         : null;
       let r = await adminApi.saveConfig(user.token, cat, content);
+      categorySaved = true;
+      setVersion(r.version);
       if (generated) {
         const faqs = await adminApi.config(user.token, "faqs");
         const entries: FaqEntry[] = Array.isArray(faqs.content?.["entries"])
@@ -69,9 +82,9 @@ export default function BusinessConfig() {
       } else {
         setToast({ tone: "success", msg: `Saved (version ${r.version}) — live on new messages` });
       }
-      setVersion(r.version);
+      setDirty(false);
     } catch (e) {
-      setToast({ tone: "error", msg: e instanceof ApiError ? e.message : "Couldn't save." });
+      setToast({ tone: "error", msg: categorySaved ? "Settings saved, but the receptionist FAQ update failed. Save again to retry synchronization." : e instanceof ApiError ? e.message : "Couldn't save." });
     } finally {
       setSaving(false);
     }
@@ -81,36 +94,37 @@ export default function BusinessConfig() {
     <>
       <PageHeading
         title="Business settings"
-        sub="What the receptionist knows and says. Changes take effect on new messages."
+        sub="Your business, in your words. Give the receptionist the context to answer well."
         actions={
-          <Button onClick={save} loading={saving} disabled={!content}>
+          <Button type="submit" form="business-settings" loading={saving} disabled={!content || loading || !dirty}>
             Save changes
           </Button>
         }
       />
 
-      <div className="mb-5 flex flex-wrap gap-1.5" role="tablist" aria-label="Settings categories">
+      <div className="settings-layout">
+      <nav className="settings-nav" aria-label="Settings categories">
         {CATEGORIES.map((c) => (
           <button
             key={c.id}
-            role="tab"
-            aria-selected={cat === c.id}
-            onClick={() => setCat(c.id)}
-            className={`rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
-              cat === c.id ? "bg-pine-700 text-[#f4f1e8] shadow-card" : "border border-line-strong bg-surface text-ink-2 hover:border-ink-3"
-            }`}
+            type="button"
+            aria-pressed={cat === c.id}
+            disabled={saving}
+            onClick={() => { if (c.id === cat) return; if (dirty) setPendingCategory(c.id); else setCat(c.id); }}
           >
             {c.label}
           </button>
         ))}
-      </div>
+      </nav>
 
       {loading ? (
-        <div className="flex justify-center py-24 text-ink-3"><Spinner /></div>
+        <LoadingState label="Loading business settings" />
       ) : error ? (
         <ErrorNote>{error}</ErrorNote>
       ) : content ? (
-        <div className="max-w-2xl rounded-card border border-line bg-surface p-5">
+        <section className="settings-panel">
+          <CardHead title={CATEGORIES.find(category => category.id === cat)!.label} sub={cat === "business_info" ? "How your business introduces itself." : cat === "hours" ? "Opening hours and the timezone used for scheduling." : cat === "appointment_types" ? "The default length of an appointment." : cat === "faqs" ? "Answers grounded in your saved business knowledge." : cat === "services" ? "What your business offers, in plain language." : "Advanced rules for human escalation."} />
+          <form id="business-settings" key={cat} onSubmit={event => { event.preventDefault(); void save(); }} className="settings-panel-body space-y-6">
           {cat === "business_info" && <BusinessInfoForm content={content} onChange={setContentNonNull} />}
           {cat === "hours" && <HoursForm content={content} onChange={setContentNonNull} />}
           {cat === "appointment_types" && <AppointmentTypesForm content={content} onChange={setContentNonNull} />}
@@ -119,9 +133,12 @@ export default function BusinessConfig() {
           {cat === "escalation" && (
             <JsonForm content={content} onChange={setContentNonNull} hint="Raw JSON for this category — edited by an administrator." />
           )}
-          <p className="mt-4 text-xs text-ink-3">Current version: {version}</p>
-        </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5 text-xs text-ink-3"><span>Saved version {version}</span><span className={dirty ? "font-medium text-warn-fg" : "text-success-fg"}>{dirty ? "Unsaved changes" : "Up to date"}</span></div>
+          </form>
+        </section>
       ) : null}
+      </div>
+      <Modal open={pendingCategory !== null} onClose={() => setPendingCategory(null)} title="Leave these changes?" sub="Your edits in this category haven’t been saved." footer={<><Button variant="secondary" onClick={() => setPendingCategory(null)}>Keep editing</Button><Button variant="danger" onClick={() => { if (pendingCategory) setCat(pendingCategory); setDirty(false); setPendingCategory(null); }}>Discard changes</Button></>}><p>Switching categories will discard these edits. Save them first if you want the receptionist to use them.</p></Modal>
       {toast && <Toast tone={toast.tone} onClose={() => setToast(null)}>{toast.msg}</Toast>}
     </>
   );
@@ -143,10 +160,10 @@ function BusinessInfoForm({ content, onChange }: { content: Record<string, unkno
   return (
     <div className="space-y-4">
       <Field label="Business name" htmlFor="bi-name">
-        <Input id="bi-name" value={name.value} onChange={(e) => name.set(e.target.value)} placeholder="Acme Clinic" />
+        <Input id="bi-name" value={name.value} onChange={(e) => name.set(e.target.value)} placeholder="Your business name" />
       </Field>
       <Field label="Greeting" htmlFor="bi-greeting" hint="Spoken at the start of every conversation.">
-        <Input id="bi-greeting" value={greeting.value} onChange={(e) => greeting.set(e.target.value)} placeholder="Welcome to Acme Clinic! How can I help you today?" />
+        <Textarea id="bi-greeting" rows={3} value={greeting.value} onChange={(e) => greeting.set(e.target.value)} placeholder="How would you like to welcome your customers?" />
       </Field>
     </div>
   );
@@ -241,17 +258,17 @@ function HoursForm({ content, onChange }: { content: Record<string, unknown>; on
         hint="Times are interpreted in this timezone (e.g. Europe/Berlin)."
         error={tz.value && !validTz ? "Not a valid IANA timezone." : undefined}
       >
-        <Input id="h-tz" value={tz.value} onChange={(e) => tz.set(e.target.value)} placeholder="Europe/Berlin" />
+        <Input id="h-tz" required value={tz.value} onChange={(e) => { tz.set(e.target.value); try { new Intl.DateTimeFormat("en", { timeZone: e.target.value }); e.target.setCustomValidity(e.target.value ? "" : "Enter a timezone."); } catch { e.target.setCustomValidity("Enter a valid IANA timezone."); } }} placeholder="Asia/Kolkata" />
       </Field>
       <div className="divide-y divide-line rounded-xl border border-line">
         {days.map((d, i) => (
-          <div key={d.day} className="flex items-center gap-3 px-3.5 py-2.5">
+          <div key={d.day} className="flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-4">
             <label className="flex w-28 items-center gap-2 text-[13px] font-medium text-ink">
               <input type="checkbox" checked={d.open} onChange={(e) => setDay(i, { open: e.target.checked })} className="accent-pine-600" />
               {cap(d.day)}
             </label>
             {d.open ? (
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <input
                   type="time"
                   aria-label={`${cap(d.day)} opens`}
@@ -376,7 +393,7 @@ function AppointmentTypesForm({ content, onChange }: { content: Record<string, u
   const num = typeof content["default_duration_minutes"] === "number" ? String(content["default_duration_minutes"]) : "";
   const [text, setText] = useState(num);
   const parsed = Number(text);
-  const valid = text !== "" && Number.isFinite(parsed) && parsed >= 5 && parsed <= 480;
+  const valid = text !== "" && Number.isInteger(parsed) && parsed >= 5 && parsed <= 480;
   return (
     <div className="space-y-4">
       <Field
@@ -387,11 +404,19 @@ function AppointmentTypesForm({ content, onChange }: { content: Record<string, u
       >
         <Input
           id="at-dur"
+          type="number"
+          required
+          min={5}
+          max={480}
+          step={1}
           inputMode="numeric"
           value={text}
           onChange={(e) => {
-            setText(e.target.value);
-            if (valid) onChange((c) => ({ ...c, default_duration_minutes: parsed }));
+            const next = e.target.value;
+            const minutes = Number(next);
+            setText(next);
+            if (next !== "" && Number.isInteger(minutes) && minutes >= 5 && minutes <= 480) onChange((c) => ({ ...c, default_duration_minutes: minutes }));
+            else onChange(c => c);
           }}
           placeholder="45"
           className="tabular w-32"
@@ -473,10 +498,14 @@ function JsonForm({ content, onChange, hint }: { content: Record<string, unknown
             setText(e.target.value);
             try {
               const parsed = JSON.parse(e.target.value) as Record<string, unknown>;
+              if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error("Enter a JSON object.");
               onChange(() => parsed);
+              e.target.setCustomValidity("");
               setParseError(null);
             } catch (err) {
-              setParseError(`Invalid JSON: ${err instanceof Error ? err.message : ""}`);
+              onChange(c => c);
+              setParseError("Enter a valid JSON object before saving.");
+              e.target.setCustomValidity("Enter a valid JSON object before saving.");
             }
           }}
         />
