@@ -7,11 +7,11 @@ Cleardesk is a conversational front desk for real-estate enquiries, grounded bus
 **React · TypeScript · Vite · Tailwind CSS · Fastify · Supabase/PostgreSQL · Ollama · Faster-Whisper · Google Calendar**
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/15ff2d5d-0268-409a-8eb5-b1608ef6fbb3" width="1100" alt="Cleardesk customer homepage with text-chat and browser-call entry points">
+  <img src="docs/assets/screenshots/homepage.png" width="1100" alt="Cleardesk customer homepage with text-chat and browser-call entry points">
 </p>
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/adfe4fd7-9283-4ed3-9b56-6849662c291c" width="49%" alt="Cleardesk browser-call introduction and Start call control">
-  <img src="https://github.com/user-attachments/assets/a234565f-b301-4d01-a756-bad74d991c83" width="49%" alt="Cleardesk active browser voice conversation with transcript and call controls">
+  <img src="docs/assets/screenshots/call-start.png" width="49%" alt="Cleardesk browser-call introduction and Start call control">
+  <img src="docs/assets/screenshots/active-call.png" width="49%" alt="Cleardesk active browser voice conversation with transcript and call controls">
 </p>
 
 ## What it does
@@ -25,6 +25,10 @@ Cleardesk is a conversational front desk for real-estate enquiries, grounded bus
 | Human handoff | Flags the conversation in the admin console; does not claim to send an external notification. |
 | Admin console | Customers, transcripts, appointment outcomes, business settings, model discovery and Calendar metadata. |
 | AI boundaries | Validated structured output; models cannot confirm bookings or administer the application. |
+
+<p align="center">
+  <img src="docs/assets/screenshots/admin-dashboard.png" width="1100" alt="Cleardesk admin dashboard showing conversations, appointments and customer overview">
+</p>
 
 ### Built around property enquiries
 
@@ -45,7 +49,7 @@ An offer alone creates no event. Acceptance requires the conversation token, cur
 <p><strong>Admin → Business settings</strong> holds company information, greeting, hours/timezone, services, appointment types/duration, escalation rules and manually maintained FAQs.</p>
 <p>Adapt these for another agency or business. Hours and services synchronize generated FAQ entries; maintain specific factual answers yourself. This is <strong>one business per installation</strong>, not built-in multi-tenant SaaS or automatic document ingestion.</p>
 </td>
-<td width="48%"><img src="https://github.com/user-attachments/assets/dea5f5eb-380d-4b41-bd47-a3fb09db96a9" width="100%" alt="Cleardesk Business settings for company knowledge and operating details"></td>
+<td width="48%"><img src="docs/assets/screenshots/business-settings.png" width="100%" alt="Cleardesk Business settings for company knowledge and operating details"></td>
 </tr></table>
 
 ## Choose your AI runtime
@@ -55,7 +59,7 @@ An offer alone creates no event. Acceptance requires the conversation token, cur
 <p>Install <a href="https://ollama.com/download/windows">Ollama for Windows</a> and pull <code>qwen3:1.7b</code>, the tested default. Admin → AI models discovers installed Ollama models and supports explicit local selection. Choose models that fit available RAM and validate their structured output.</p>
 <p>Provider registration, server-side API-key storage and OpenAI-compatible connectivity configuration exist. The shipped orchestrator nevertheless <strong>refuses cloud inference</strong>, even with an active cloud entry. Adding a key does not enable inference: explicit owner approval and reviewed integration are still required.</p>
 </td>
-<td width="48%"><img src="https://github.com/user-attachments/assets/480e3237-134c-47ce-a66a-a73ebdc7562d" width="100%" alt="Cleardesk AI models with local discovery and provider configuration"></td>
+<td width="48%"><img src="docs/assets/screenshots/ai-models.png" width="100%" alt="Cleardesk AI models with local discovery and provider configuration"></td>
 </tr></table>
 
 Arbitrary downloaded weights are not automatically supported. Use an Ollama-supported model or its [model import procedure](https://docs.ollama.com/import), then test compatibility. Speech and inference run sequentially; memory safeguards may pause voice. Authorized cloud services can transmit prompts externally and incur usage charges. There is no silent paid fallback.
