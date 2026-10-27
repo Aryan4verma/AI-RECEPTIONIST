@@ -11,6 +11,7 @@ import { GoogleIntegrationService, GoogleNotConnectedError } from "./integration
 const CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3";
 /** Settle window before a 404 on the deterministic event ID is trusted. */
 const ABSENCE_SETTLE_MS = 1_000;
+const REQUEST_TIMEOUT_MS = 30_000;
 
 /**
  * Deterministic Google event ID for an idempotency key. Google requires
@@ -31,7 +32,7 @@ export function googleEventIdFor(idempotencyKey: string): string {
  * connection. ADR-0004 v0.2 honesty contract per method:
  *
  * - createEvent: the durable idempotency key becomes a CLIENT-ASSIGNED event
- *   id (`cleardesk-<key>`) — Google's documented insert-dedupe mechanism. A
+ *   id (`c1<uuid-without-hyphens>`) — Google's insert identity mechanism. A
  *   409 "id already exists" is resolved by GETting that exact event and
  *   reporting it as created, so retries can never duplicate. Sent-but-lost
  *   requests (network error, 5xx, 429) return `unresolved` — never a guess.
@@ -53,6 +54,7 @@ export class GoogleCalendarAdapter implements CalendarProvider {
       calendarId: string;
       fetchFn?: typeof fetch;
       now?: () => number;
+      requestTimeoutMs?: number;
     },
   ) {}
 
@@ -71,6 +73,7 @@ export class GoogleCalendarAdapter implements CalendarProvider {
     const doFetch = async (t: string) =>
       (this.deps.fetchFn ?? fetch)(url, {
         ...init,
+        signal: AbortSignal.timeout(this.deps.requestTimeoutMs ?? REQUEST_TIMEOUT_MS),
         headers: { ...init.headers, authorization: `Bearer ${t}` },
       });
     let res = await doFetch(token).catch((err: unknown) => {
@@ -85,7 +88,7 @@ export class GoogleCalendarAdapter implements CalendarProvider {
       });
     }
     if (res.status === 204) return { status: 204, body: null };
-    const text = await res.text().catch(() => "");
+    const text = await res.text().catch(() => { throw new TransportError("Google Calendar response was interrupted"); });
     let body: unknown = null;
     try {
       body = text ? (JSON.parse(text) as unknown) : null;
@@ -176,7 +179,8 @@ export class GoogleCalendarAdapter implements CalendarProvider {
       throw err; // transport error → caller (BookingService) records UNRESOLVED
     });
     if (status === 200 || status === 201) {
-      return { status: "created", eventId: String((body as { id?: string })?.id ?? eventId) };
+      const verified = this.classifyEvent(body, eventId, draft.idempotencyKey);
+      return verified.status === "found" ? { status: "created", eventId: verified.eventId } : { status: "unresolved" };
     }
     if (status === 409) {
       // Deterministic-ID collision: the event already exists from a previous
@@ -208,7 +212,7 @@ export class GoogleCalendarAdapter implements CalendarProvider {
     const t0 = this.now();
     const first = await attempt();
     if (first === null) return { status: "inconclusive" };
-    if (first.status === 200) return { status: "found", eventId: String((first.body as { id?: string })?.id ?? eventId) };
+    if (first.status === 200) return this.classifyEvent(first.body, eventId, idempotencyKey);
     if (first.status === 404) {
       // Settle window: a just-inserted event can briefly 404 on point reads.
       // Wait out the remainder, then trust a second consecutive 404.
@@ -216,10 +220,20 @@ export class GoogleCalendarAdapter implements CalendarProvider {
       if (elapsed < ABSENCE_SETTLE_MS) await sleep(ABSENCE_SETTLE_MS - elapsed);
       const second = await attempt();
       if (second !== null && second.status === 404) return { status: "verified_absent" };
-      if (second !== null && second.status === 200) return { status: "found", eventId };
+      if (second !== null && second.status === 200) return this.classifyEvent(second.body, eventId, idempotencyKey);
       return { status: "inconclusive" };
     }
     return { status: "inconclusive" };
+  }
+
+  private classifyEvent(body: unknown, eventId: string, identity: string): IdempotencySearch {
+    const event = body as { id?: unknown; status?: unknown; extendedProperties?: { private?: { idempotencyKey?: unknown } } } | null;
+    if (event?.id !== eventId) return { status: "inconclusive" };
+    // Google GET returns deletion tombstones; only their id is guaranteed.
+    if (event.status === "cancelled") return { status: "verified_absent" };
+    if (event.status !== "confirmed" && event.status !== "tentative") return { status: "inconclusive" };
+    if (event.extendedProperties?.private?.idempotencyKey !== identity) return { status: "inconclusive" };
+    return { status: "found", eventId };
   }
 
   async cancelEvent(eventId: string): Promise<{ status: "cancelled" | "unresolved" | "failed"; reason?: string }> {

@@ -27,7 +27,7 @@ interface Route {
   respond: (init: RequestInit) => Response | Promise<Response>;
 }
 
-function makeAdapter(routes: Route[], opts: { dropNetwork?: boolean } = {}) {
+function makeAdapter(routes: Route[], opts: { dropNetwork?: boolean; requestTimeoutMs?: number } = {}) {
   const store = new MemoryGoogleIntegrationStore();
   const audit = new MemoryAuditRepo();
   const stored: Array<{ id: string; secret: string }> = [];
@@ -75,7 +75,7 @@ function makeAdapter(routes: Route[], opts: { dropNetwork?: boolean } = {}) {
     fetchFn: integrationFetch,
     now: () => 1_000_000,
   });
-  const adapter: CalendarProvider = new GoogleCalendarAdapter({ integration, calendarId: "cal@test", fetchFn });
+  const adapter: CalendarProvider = new GoogleCalendarAdapter({ integration, calendarId: "cal@test", fetchFn, requestTimeoutMs: opts.requestTimeoutMs });
   const connect = async () => {
     const { authUrl } = await integration.beginConnect("a");
     const state = new URL(authUrl).searchParams.get("state") as string;
@@ -92,7 +92,70 @@ const draft = {
   timezone: "Europe/Berlin",
 };
 
+function activeEvent() {
+  return { id: googleEventIdFor(draft.idempotencyKey), status: "confirmed", extendedProperties: { private: { idempotencyKey: draft.idempotencyKey } } };
+}
+
 describe("GoogleCalendarAdapter", () => {
+  it.each([false, true])("recognizes a deletion tombstone after a prior 404: %s", async (after404) => {
+    let reads = 0;
+    const { adapter, connect } = makeAdapter([{ match: u => u.includes("/events/c1"), respond: () => {
+      reads++;
+      return after404 && reads === 1 ? jsonResponse(404, {}) : jsonResponse(200, { id: googleEventIdFor(draft.idempotencyKey), status: "cancelled" });
+    } }]);
+    await connect();
+    expect(await adapter.findByIdempotencyKey(draft.idempotencyKey)).toEqual({ status: "verified_absent" });
+  });
+
+  it.each([
+    { ...activeEvent(), id: "unrelated-event" },
+    { ...activeEvent(), extendedProperties: { private: { idempotencyKey: "unrelated-key" } } },
+    { id: googleEventIdFor(draft.idempotencyKey), status: "confirmed" },
+    { ...activeEvent(), status: "unexpected" },
+    null,
+  ])("refuses malformed or mismatched event resources: %j", async body => {
+    const { adapter, connect } = makeAdapter([{ match: u => u.includes("/events"), respond: () => jsonResponse(200, body) }]);
+    await connect();
+    expect(await adapter.findByIdempotencyKey(draft.idempotencyKey)).toEqual({ status: "inconclusive" });
+    expect(await adapter.createEvent(draft)).toEqual({ status: "unresolved" });
+  });
+
+  it("a 409 pointing to a deleted event never becomes a confirmed booking", async () => {
+    const { adapter, connect } = makeAdapter([{ match: u => u.includes("/events"), respond: init => init.method === "POST"
+      ? jsonResponse(409, {}) : jsonResponse(200, { id: googleEventIdFor(draft.idempotencyKey), status: "cancelled" }) }]);
+    await connect();
+    expect(await adapter.createEvent(draft)).toEqual({ status: "unresolved" });
+  });
+
+  it("validates the resource returned by the second lookup after a 404", async () => {
+    let reads = 0;
+    const { adapter, connect } = makeAdapter([{ match: u => u.includes("/events/c1"), respond: () => ++reads === 1
+      ? jsonResponse(404, {}) : jsonResponse(200, { ...activeEvent(), id: "unrelated-event" }) }]);
+    await connect();
+    expect(await adapter.findByIdempotencyKey(draft.idempotencyKey)).toEqual({ status: "inconclusive" });
+  });
+
+  it("times out a hanging send and preserves cancellation uncertainty", async () => {
+    const signals: AbortSignal[] = [];
+    const { adapter, connect } = makeAdapter([{ match: u => u.includes("/events"), respond: init => new Promise((_, reject) => {
+      const signal = init.signal as AbortSignal;
+      signals.push(signal);
+      signal.addEventListener("abort", () => reject(new Error("fixture timeout")), { once: true });
+    }) }], { requestTimeoutMs: 15 });
+    await connect();
+    await expect(adapter.createEvent(draft)).rejects.toThrow("fixture timeout");
+    expect(await adapter.cancelEvent(googleEventIdFor(draft.idempotencyKey))).toEqual({ status: "unresolved" });
+    expect(signals).toHaveLength(2);
+    expect(signals.every(s => s.aborted)).toBe(true);
+  });
+
+  it("an interrupted successful response body never reports a confirmed event", async () => {
+    const { adapter, connect } = makeAdapter([{ match: u => u.includes("/events"), respond: () => ({ status: 200, text: async () => { throw new Error("fixture dropped body"); } } as unknown as Response) }]);
+    await connect();
+    await expect(adapter.createEvent(draft)).rejects.toThrow("response was interrupted");
+    expect(await adapter.findByIdempotencyKey(draft.idempotencyKey)).toEqual({ status: "inconclusive" });
+  });
+
   it("freeBusy parses the dedicated calendar's intervals", async () => {
     const { adapter, connect } = makeAdapter([
       {
@@ -123,7 +186,7 @@ describe("GoogleCalendarAdapter", () => {
           if (u.includes("/events/c1")) getCalls.push(u);
           return u.includes("/events/c1");
         },
-        respond: (_init: RequestInit) => jsonResponse(200, { id: "c19f1d2a4b12344abc8def001122334455" }),
+        respond: (_init: RequestInit) => jsonResponse(200, activeEvent()),
       },
     ]);
     await connect();
@@ -158,7 +221,7 @@ describe("GoogleCalendarAdapter", () => {
 
   it("findByIdempotencyKey: found on 200; two consecutive 404s (settle window) → verified_absent; transport → inconclusive", async () => {
     const found = makeAdapter([
-      { match: (u) => u.includes("/events/c1"), respond: (_init: RequestInit) => jsonResponse(200, { id: "c19f1d2a4b12344abc8def001122334455" }) },
+      { match: (u) => u.includes("/events/c1"), respond: (_init: RequestInit) => jsonResponse(200, activeEvent()) },
     ]);
     await found.connect();
     await expect(found.adapter.findByIdempotencyKey(draft.idempotencyKey)).resolves.toEqual({
@@ -237,7 +300,7 @@ describe("GoogleCalendarAdapter", () => {
         if (init.method === "POST") {
           postCount += 1;
           // First insert: stale token → 401. After refresh: 200.
-          return jsonResponse(postCount === 1 ? 401 : 200, postCount === 1 ? {} : { id: "c19f1d2a4b12344abc8def001122334455" });
+          return jsonResponse(postCount === 1 ? 401 : 200, postCount === 1 ? {} : activeEvent());
         }
         return jsonResponse(500, {});
       }) as typeof fetch;
@@ -269,7 +332,7 @@ describe("GoogleCalendarAdapter", () => {
         match: (u, init) => u.includes("/events") && init.method === "POST",
         respond: (init: RequestInit) => {
           sentBody = JSON.parse(String(init.body)) as Record<string, unknown>;
-          return jsonResponse(201, { id: sentBody?.["id"] });
+          return jsonResponse(201, { ...activeEvent(), id: sentBody?.["id"] });
         },
       },
     ]);
