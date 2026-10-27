@@ -1,0 +1,7 @@
+flowchart TD
+    Customer <--> React["React: text or browser voice"]
+    React <--> API["Fastify: validation and orchestration"]
+    API <--> STT["Local Faster-Whisper: transcription"]
+    API <--> AI["Local Ollama: intent and extraction"]
+    API <--> DB["Supabase: conversation, booking state and audit"]
+    API <-->|Explicit accept, recheck, verify| Calendar["Calendar adapter: mock default or Google"]

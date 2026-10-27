@@ -32,16 +32,9 @@ Try “I want to buy a 3BHK flat,” followed by “My budget is 80 lakh,” the
 
 ## How booking works
 
-```mermaid
-flowchart TD
-    Customer <--> React["React: text or browser voice"]
-    React <--> API["Fastify: validation and orchestration"]
-    API <--> STT["Local Faster-Whisper: transcription"]
-    API <--> AI["Local Ollama: intent and extraction"]
-    API <--> DB["Supabase: conversation, booking state and audit"]
-    API -->|Explicit confirmation and availability recheck| Calendar["Calendar adapter: mock default or Google"]
-    Calendar -->|Verified or unresolved outcome| API
-```
+[![Cleardesk flow: customer, React, Fastify, local STT/AI, Supabase and Calendar adapter](docs/assets/architecture.svg)](docs/assets/architecture.svg)
+
+[Mermaid source](docs/assets/architecture.mmd). The SVG export keeps the diagram readable when GitHub’s rich renderer is unavailable.
 
 An offer alone creates no event. Acceptance requires the conversation token, current offer token and explicit decision. A durable idempotency identity prevents duplicates; uncertain results remain **unresolved** for reconciliation, never blindly retried under a new identity. Replies and admin status reflect stored outcomes. Google writes require deliberate configuration and authorization; the default is `CALENDAR_MODE=mock`.
 
@@ -125,4 +118,4 @@ Local AI inference is possible; this is **not fully offline**. Supabase processe
 
 ## License
 
-Original code/documentation: **MIT**, copyright © 2026 Aryan Verma; see [LICENSE](LICENSE). Reuse, modification and commercial use are permitted under its conditions. Fonts, photographs, dependencies, screenshots and model weights retain their own terms; MIT does not relicense third-party content. See [third-party notices](THIRD_PARTY_NOTICES.md). No copyright-claim immunity is promised.
+Original code/documentation: **MIT**, copyright © 2026 Aryan Verma; see [LICENSE](LICENSE). Reuse, modification and commercial use are permitted under its conditions. Fonts, photographs, dependencies, screenshots and model weights retain their own terms; MIT does not relicense third-party content. See [third-party notices](THIRD_PARTY_NOTICES.md).
