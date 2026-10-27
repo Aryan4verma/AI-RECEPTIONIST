@@ -1,5 +1,6 @@
 import pino, { type DestinationStream } from "pino";
 import type { Env } from "../config/env.js";
+import { ERROR_CODES } from "../server/errors.js";
 
 /**
  * Structured logger with mandatory redaction. Message content is never logged —
@@ -9,6 +10,12 @@ export function createLogger(env: Pick<Env, "LOG_LEVEL" | "NODE_ENV">, destinati
   return pino({
     level: env.LOG_LEVEL,
     serializers: {
+      // SQL/provider exception messages and nested causes can contain secrets
+      // or row contents. Path redaction cannot safely sanitize arbitrary text.
+      err: (error: unknown) => {
+        const code = (error as { code?: unknown } | null)?.code;
+        return { type: "Error", code: typeof code === "string" && (ERROR_CODES as readonly string[]).includes(code) ? code : "INTERNAL" };
+      },
       // OAuth callbacks carry one-time credentials in the query string.
       // Keep request correlation and route information, never query values.
       req: (req: { method?: string; url?: string }) => ({

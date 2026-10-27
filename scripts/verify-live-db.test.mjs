@@ -33,7 +33,7 @@ describe("verify() check contract (repair finding 1: no shared mutable state)", 
     .map((name) => ({ name, rls: true }));
 
   it("verify() executes the check sequence against a pool-like client and returns independent results", async () => {
-    // The sequence issues 6 queries; feed each a matching shape via a
+    // The sequence issues 7 queries; feed each a matching shape via a
     // call-counting pool. Contract: results are independent objects.
     const queries = [
       fullGreen,
@@ -49,12 +49,13 @@ describe("verify() check contract (repair finding 1: no shared mutable state)", 
       [{ anon_select: false, auth_select: true, auth_insert_messages: false, svc_insert: true, svc_delete_audit: false }],
       [{ tgname: "enforce_recording_consent", tgenabled: "O" }],
       [{ proname: "is_app_admin", proconfig: ['search_path=""'] }, { proname: "enforce_recording_consent", proconfig: ['search_path=""'] }],
-      [{ customers: 0, conversations: 0, appointments: 0 }],
+      [{ customers: 1, conversations: 37, appointments: 1, orphan_appointments: 0, confirmed_without_event: 0, duplicate_events: 0, unresolved_appointments: 0 }],
+      [{ runtime_role: "cleardesk_runtime", bypass_rls: true, audit_mutation: false, schema_create: false, owns_app_tables: false }],
     ];
     let call = 0;
     const pool = { query: async (q) => ({ rows: queries[call++] }) };
     const checks = await verify(pool);
-    expect(checks).toHaveLength(6);
+    expect(checks).toHaveLength(7);
     expect(checks.every((c) => c.ok)).toBe(true);
     // Independence: mutating one result must not affect another
     checks[0].detail = "mutated";
@@ -69,11 +70,16 @@ describe("verify() check contract (repair finding 1: no shared mutable state)", 
       [{ anon_select: false, auth_select: true, auth_insert_messages: false, svc_insert: true, svc_delete_audit: false }],
       [{ tgname: "enforce_recording_consent", tgenabled: "O" }],
       [{ proname: "is_app_admin", proconfig: ['search_path=""'] }, { proname: "enforce_recording_consent", proconfig: ['search_path=""'] }],
-      [{ customers: 0, conversations: 0, appointments: 0 }],
+      [{ customers: 1, conversations: 37, appointments: 1, orphan_appointments: 0, confirmed_without_event: 1, duplicate_events: 0, unresolved_appointments: 1 }],
+      [{ runtime_role: "postgres", bypass_rls: true, audit_mutation: true, schema_create: true, owns_app_tables: true }],
     ];
     const pool = { query: async () => ({ rows: badRows[call++] }) };
     const checks = await verify(pool);
     expect(checks[0].ok).toBe(false);
     expect(checks[0].detail).toContain("0 with RLS");
+    expect(checks[5].ok).toBe(false);
+    expect(checks[5].detail).toContain("confirmed_without_event=1");
+    expect(checks[6].ok).toBe(false);
+    expect(checks[6].detail).toContain("audit_mutation=true");
   });
 });

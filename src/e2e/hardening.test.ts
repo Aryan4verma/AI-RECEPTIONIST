@@ -50,7 +50,7 @@ describe("production composition (real factory, lazy clients)", () => {
     // Admin guard active on the production app (route registered; live auth
     // verification needs credentials):
     const missing = await production.app.inject({ method: "GET", url: "/api/v1/admin/customers" });
-    expect([401, 500]).toContain(missing.statusCode);
+    expect(missing.statusCode).toBe(401);
     await production.shutdown("test");
   });
 

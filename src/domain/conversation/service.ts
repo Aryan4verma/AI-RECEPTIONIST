@@ -15,6 +15,7 @@ import { bareSiteVisitPurpose, emptyExtraction, type ExtractionService } from ".
 import type { KnowledgeService } from "../knowledge/service.js";
 import type { BookingService } from "../booking/service.js";
 import { isPropertyDetail, isPropertyInterest, propertyFollowUp } from "./propertyEnquiry.js";
+import { isControlInstruction } from "../../security/promptBoundary.js";
 
 export interface ConversationDeps {
   conversations: ConversationRepo;
@@ -248,6 +249,7 @@ export class ConversationService {
 
   /** Classify one customer utterance with validated structured output. */
   async classifyIntent(conversation: ConversationRow, text: string): Promise<IntentResult> {
+    if (isControlInstruction(text)) return { schema_version: 1, intent: "unknown" };
     if (bareSiteVisitPurpose(text)) return { schema_version: 1, intent: "book_appointment" };
     // A standalone greeting needs no model residency or inference. Never
     // short-circuit substantive messages such as "Hello, I want a flat".
@@ -257,7 +259,8 @@ export class ConversationService {
     if (!/\b(?:book|visit|appointment|cancel|reschedule|human|agent)\b/i.test(text) && isPropertyInterest(text)) {
       return { schema_version: 1, intent: "property_enquiry" };
     }
-    const history = await this.deps.conversations.listMessages(conversation.id, 12);
+    const history = (await this.deps.conversations.listMessages(conversation.id, 12))
+      .filter(m => !isControlInstruction(m.content));
     if (history.at(-1)?.role === "customer" && history.at(-1)?.content === text) history.pop();
     if (isPropertyDetail(text) && !/^\s*(?:what|when|where|which|how|why|can|is|are|do|does|who)\b/i.test(text) &&
         history.some(message => message.role === "customer" && isPropertyInterest(message.content))) {
@@ -307,7 +310,7 @@ export class ConversationService {
 
   private async customerContext(id: string, text: string): Promise<string[]> {
     const history = await this.deps.conversations.listMessages(id, 24);
-    const messages = history.filter((m) => m.role === "customer").map((m) => m.content.slice(0, 1000));
+    const messages = history.filter((m) => m.role === "customer" && !isControlInstruction(m.content)).map((m) => m.content.slice(0, 1000));
     if (messages.at(-1) !== text) messages.push(text);
     return messages.slice(-12);
   }

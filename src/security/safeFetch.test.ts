@@ -6,6 +6,11 @@ function res(status: number, headers: Record<string, string> = {}): Response {
 }
 
 describe("request-time SSRF protection (SEC-16)", () => {
+  it.each(["::ffff:7f00:1", "::ffff:a9fe:a9fe", "fe90::1", "224.0.0.1"])("blocks alternate non-public address %s before any connection", async address => {
+    let calls = 0;
+    await expect(safeProviderFetch("https://fixture.example/models", {}, { resolveDns: async () => [address], fetchFn: async () => { calls++; return res(200); } })).rejects.toThrow(/private address/);
+    expect(calls).toBe(0);
+  });
   it("blocks a hostname that resolves to a private address (DNS rebinding guard)", async () => {
     await expect(
       safeProviderFetch("https://api.example.com/v1", {}, {
@@ -26,6 +31,26 @@ describe("request-time SSRF protection (SEC-16)", () => {
     });
     expect(out.status).toBe(200);
     expect(called).toBe("https://api.example.com/v1");
+  });
+
+  it.each(["success", "failure", "redirect"])("releases per-request dispatchers after %s", async mode => {
+    let closed = 0, calls = 0;
+    try {
+      await safeProviderFetch("https://api.example.com/a", {}, {
+        resolveDns: async () => ["93.184.216.34"],
+        makeDispatcher: () => ({ close: async () => { closed++; } }),
+        fetchFn: async () => {
+          calls++;
+          if (mode === "failure") throw new Error("fixture network failure");
+          return mode === "redirect" && calls === 1 ? res(302, { location: "/b" }) : res(200);
+        },
+      });
+      expect(mode).not.toBe("failure");
+    } catch (error) {
+      if (mode !== "failure") throw error;
+      expect((error as Error).message).toBe("fixture network failure");
+    }
+    expect(closed).toBe(calls);
   });
 
   it("re-validates EVERY redirect hop — public → private redirect is blocked", async () => {

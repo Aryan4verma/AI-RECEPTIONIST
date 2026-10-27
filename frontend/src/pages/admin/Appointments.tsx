@@ -82,7 +82,7 @@ export default function Appointments() {
             <tbody className="divide-y divide-line">
               {sorted.map((a) => (
                 <tr key={a.id} className="hover:bg-canvas/60">
-                  <td className="px-4 py-3 font-medium text-ink"><button className="text-left hover:text-pine-700" onClick={() => setDetails(a)}>{formatDateTime(a.scheduled_start)}</button></td>
+                  <td className="px-4 py-3 font-medium text-ink"><button className="text-left hover:text-pine-700" onClick={() => setDetails(a)}>{formatDateTime(a.scheduled_start, a.timezone)}</button></td>
                   <td className="max-w-56 truncate px-4 py-3 text-ink-2">{a.purpose ?? a.service_type ?? "—"}</td>
                   <td className="tabular px-4 py-3 text-ink-2">{a.duration_minutes} min <span className="mt-1 block text-xs text-ink-3">{a.timezone}</span></td>
                   <td className="px-4 py-3">
@@ -100,11 +100,11 @@ export default function Appointments() {
             </tbody>
           </table>
         </div>
-        <ul className="divide-y divide-line md:hidden">{sorted.map(a => <li key={a.id} className="space-y-4 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="font-display text-lg leading-snug">{formatDateTime(a.scheduled_start)}</p><p className="record-meta">{a.duration_minutes} min · {a.timezone}</p></div><Badge tone={statusTone(a.status)}>{STATUS_LABELS[a.status] ?? a.status}</Badge></div><p className="text-sm text-ink-2 [overflow-wrap:anywhere]">{a.purpose ?? a.service_type ?? "Appointment"}</p><div className="record-actions"><Button size="sm" variant="secondary" onClick={() => setDetails(a)}>View details</Button>{(a.status === "confirmed" || a.status === "pending_confirmation") && <Button size="sm" variant="danger" onClick={() => setCancelTarget(a)}>Cancel appointment</Button>}</div></li>)}</ul>
+        <ul className="divide-y divide-line md:hidden">{sorted.map(a => <li key={a.id} className="space-y-4 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="font-display text-lg leading-snug">{formatDateTime(a.scheduled_start, a.timezone)}</p><p className="record-meta">{a.duration_minutes} min · {a.timezone}</p></div><Badge tone={statusTone(a.status)}>{STATUS_LABELS[a.status] ?? a.status}</Badge></div><p className="text-sm text-ink-2 [overflow-wrap:anywhere]">{a.purpose ?? a.service_type ?? "Appointment"}</p><div className="record-actions"><Button size="sm" variant="secondary" onClick={() => setDetails(a)}>View details</Button>{(a.status === "confirmed" || a.status === "pending_confirmation") && <Button size="sm" variant="danger" onClick={() => setCancelTarget(a)}>Cancel appointment</Button>}</div></li>)}</ul>
         </>}
       </section>}
 
-      <Modal open={details !== null} onClose={() => setDetails(null)} title="Appointment details" variant="drawer" sub={details ? formatDateTime(details.scheduled_start) : undefined}>{details && <dl className="space-y-5">{[["Purpose", details.purpose ?? details.service_type], ["Duration", `${details.duration_minutes} minutes`], ["Timezone", details.timezone], ["Status", STATUS_LABELS[details.status] ?? details.status], ["Appointment ID", details.id]].map(([label, value]) => <div key={label}><dt className="section-kicker mb-2">{label}</dt><dd className="m-0 text-sm [overflow-wrap:anywhere]">{value || "Not provided"}</dd></div>)}</dl>}</Modal>
+      <Modal open={details !== null} onClose={() => setDetails(null)} title="Appointment details" variant="drawer" sub={details ? formatDateTime(details.scheduled_start, details.timezone) : undefined}>{details && <dl className="space-y-5">{[["Purpose", details.purpose ?? details.service_type], ["Duration", `${details.duration_minutes} minutes`], ["Timezone", details.timezone], ["Status", STATUS_LABELS[details.status] ?? details.status], ["Appointment ID", details.id]].map(([label, value]) => <div key={label}><dt className="section-kicker mb-2">{label}</dt><dd className="m-0 text-sm [overflow-wrap:anywhere]">{value || "Not provided"}</dd></div>)}</dl>}</Modal>
 
       <Modal
         open={cancelTarget !== null}
@@ -119,7 +119,7 @@ export default function Appointments() {
         }
       >
         <p>
-          {cancelTarget && formatDateTime(cancelTarget.scheduled_start)} will be cancelled for the customer. If the calendar
+          {cancelTarget && formatDateTime(cancelTarget.scheduled_start, cancelTarget.timezone)} will be cancelled for the customer. If the calendar
           can't verify the outcome, review the current status before retrying.
         </p>
       </Modal>

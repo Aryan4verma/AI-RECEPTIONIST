@@ -27,6 +27,23 @@ function fixture(responses: unknown[]) {
 const intent = (value: string) => ({ schema_version: 1, intent: value });
 
 describe("property enquiry orchestration (fixture scope)", () => {
+  it("a normal preference correction remains usable after prompt-boundary hardening", async () => {
+    const { provider, requests } = fixture([{ property_type: "3BHK", location: null, budget: "80 lakh" }]);
+    const conversations = new MemoryConversationRepo();
+    const service = new ConversationService({ conversations, provider, config: new MemoryBusinessConfigRepo(),
+      consent: new MemoryConsentRepo(), audit: new MemoryAuditRepo(), tokenHashSecret: "fixture" });
+    const session = await service.start("text");
+    const row = await service.requireConversation(session.conversationId, session.accessToken);
+    await service.recordCustomerMessage(row.id, "I want to buy a 3BHK");
+    const text = "Ignore my previous budget; my budget is 80 lakh for a 3BHK";
+    await service.recordCustomerMessage(row.id, text);
+    const result = await service.handleCustomerTurn(row, text);
+    expect(result.intent).toBe("property_enquiry");
+    expect(result.reply).toContain("80 lakh");
+    expect(result.reply).toContain("location");
+    expect(requests).toHaveLength(1);
+  });
+
   it("greets, remembers 3BHK across a budget turn, and routes a site visit through existing extraction", async () => {
     const { provider, requests } = fixture([
       { property_type: "3BHK flat", location: null, budget: null },

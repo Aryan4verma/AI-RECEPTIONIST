@@ -66,10 +66,11 @@ describe("packaged server startup", () => {
     const bad = spawn(
       process.execPath,
       ["dist/server/main.js"],
-      { env: { ...env, PORT: String(PORT + 1), SUPABASE_DB_CA_CERT_PATH: join(tmpdir(), "missing.crt") }, stdio: "pipe" },
+      { env: { ...env, PORT: String(PORT + 1), SUPABASE_DB_CA_CERT_PATH: join(tmpdir(), "synthetic-confidential-path-canary.crt") }, stdio: "pipe" },
     );
     let stderr = "";
     bad.stderr?.on("data", (d) => (stderr += String(d)));
+    bad.stdout?.on("data", (d) => (stderr += String(d)));
     const code = await new Promise<number | null>((resolve) => {
       const t = setTimeout(() => resolve(null), 15_000);
       bad.on("exit", (c) => {
@@ -78,6 +79,7 @@ describe("packaged server startup", () => {
       });
     });
     expect(code).not.toBeNull(); // exited (fail-closed), never kept listening
-    expect(stderr).toContain("TLS verification cannot be skipped");
+    expect(stderr).toContain("Backend startup failed");
+    expect(stderr).not.toContain("synthetic-confidential-path-canary");
   });
 });

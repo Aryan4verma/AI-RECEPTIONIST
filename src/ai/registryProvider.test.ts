@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { MemoryModelProviderRepo } from "../db/memory/stores.js";
 import { createSecretStore } from "../secrets/store.js";
@@ -59,13 +59,17 @@ describe("RegistryBackedProvider (FR-17 wiring)", () => {
       baseUrl: "https://api.example.com", modelId: "gpt-x",
     });
     await registry.setActive(cloud.id, "gpt-x");
-    const outcome = await backed.structured({
-      system: "s", messages: [], schema: z.object({ note: z.string() }), schemaName: "x",
-      timeoutMs: 1000, maxOutputTokens: 8,
-    });
-    expect(outcome).toMatchObject({ status: "error", error: { code: "PROVIDER_FAILURE" } });
-    const health = await backed.healthCheck();
-    expect(health.ok).toBe(false);
+    const network = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Cloud must never be contacted"));
+    try {
+      const outcome = await backed.structured({
+        system: "s", messages: [], schema: z.object({ note: z.string() }), schemaName: "x",
+        timeoutMs: 1000, maxOutputTokens: 8,
+      });
+      expect(outcome).toMatchObject({ status: "error", error: { code: "PROVIDER_FAILURE" } });
+      const health = await backed.healthCheck();
+      expect(health.ok).toBe(false);
+      expect(network).not.toHaveBeenCalled();
+    } finally { network.mockRestore(); }
   });
 
   it("no active provider falls back to the DOCUMENTED default local model (never cloud)", async () => {

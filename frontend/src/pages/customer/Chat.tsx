@@ -79,7 +79,7 @@ function OfferSlip({
           {cancelled && <Badge tone="neutral">Cancelled</Badge>}
         </div>
         <div className="px-5 pb-5 pt-2.5">
-          <p className="font-display text-lg leading-snug text-ink">{formatDateTime(o.slot)}</p>
+          <p className="font-display text-lg leading-snug text-ink">{formatDateTime(o.slot, o.timezone)}</p>
           <p className="mt-1 text-sm text-ink-2">
             {o.durationMinutes} minutes · {o.timezone}
           </p>
@@ -120,7 +120,7 @@ function OfferSlip({
         </span>
       </div>
       <div className="px-5 pb-5 pt-3">
-        <p className="font-display text-xl leading-snug text-ink">{formatDateTime(o.slot)}</p>
+        <p className="font-display text-xl leading-snug text-ink">{formatDateTime(o.slot, o.timezone)}</p>
         <p className="mt-1 text-sm text-ink-2">
           {o.durationMinutes} minutes · {o.timezone}
         </p>
@@ -600,7 +600,7 @@ export default function Chat() {
         }
       >
         This permanently cancels your appointment
-        {pendingOffer ? ` on ${formatDateTime(pendingOffer.offer.slot)} (${pendingOffer.offer.timezone})` : ""} and
+        {pendingOffer ? ` on ${formatDateTime(pendingOffer.offer.slot, pendingOffer.offer.timezone)} (${pendingOffer.offer.timezone})` : ""} and
         ends this conversation. Ending a chat never cancels an appointment — only this action does.
       </Modal>
     </div>

@@ -169,7 +169,7 @@ export default function Overview() {
               {upcoming.map((a) => (
                 <li key={a.id} className="flex items-center justify-between gap-4 px-5 py-3.5">
                   <div className="min-w-0">
-                    <p className="truncate font-display text-[15px] text-ink">{formatDateTime(a.scheduled_start)}</p>
+                    <p className="truncate font-display text-[15px] text-ink">{formatDateTime(a.scheduled_start, a.timezone)}</p>
                     <p className="mt-0.5 truncate text-[12.5px] text-ink-2">
                       {a.purpose ?? "Appointment"} · {a.duration_minutes} min · {a.timezone}
                     </p>

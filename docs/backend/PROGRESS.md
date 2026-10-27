@@ -4,9 +4,9 @@
 | --- | --- |
 | Project ID | AI-RECEPTIONIST |
 | Document ID | PROGRESS |
-| Version / date | v0.8 — 2026-10-26 |
+| Version / date | v0.9 — 2026-10-27 |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner (name not recorded — pending) |
-| Scope | Cleardesk backend, AI and existing frontend; current work is the owner-authorized premium frontend redesign. Historical stage rows below retain their original evidence. |
+| Scope | Cleardesk V1 final quality/security gate. Historical stage rows retain their original evidence; current readiness is in V1_READINESS.md. |
 | Document lifecycle | draft (living register; sections updated per stage) |
 | Input provenance | Human master execution prompt (project owner, 2026-10-23); Stage 0 discovery evidence recorded in §8 |
 | Related authoritative files | Skill entry points (read-only, outside repository): `C:\Users\sv178\OneDrive\Desktop\.agents\skills\backend-skill\backend-production\SKILL.md`, `C:\Users\sv178\OneDrive\Desktop\.agents\skills\ai-capabilities\SKILL.md` |
@@ -14,11 +14,19 @@
 
 ## 1. [REQUIRED] Control and current task
 
-- **Task ID / mode:** Voice and AI reliability on the 8 GB Windows laptop; owner-authorized 2026-10-27.
-- **Current phase:** Focused recorder/mute/handoff, memory-residency, natural-date and redundant-inference repairs. Q3 remains completed; mock mode, frontend, migration 0007 and OAuth connection preserved.
+- **Task ID / mode:** V1 final quality and security gate; owner-authorized 2026-10-27. Started at clean `bd7a65a` on main.
+- **Current phase:** Verified security/reliability corrections and final evidence; see [V1 readiness matrix](V1_READINESS.md). No production-readiness declaration.
 - **Completed repair (based on `0d99e8c`):** per-turn recorder bytes/promises reset; pending-stop guard and cleanup; noise/mute/long-turn handling; reliable TTS cancellation; contextual property enquiry routing and source-checked preference extraction; reject invented booking name/contact; audio handoff state and empty-speech handling corrected. No UI redesign, cloud inference or RAM-gate change.
 - **Inspected revision / environment:** branch `main`, tracking `origin/main`. Environment facts in §8 unchanged.
-- **Current authorization:** Owner approved focused voice/AI reliability checks and repairs, genuine microphone participation, local benchmarks and local commit; **do not push**. No Google event writes, unrelated shared database mutations, Windows-setting changes, reduced admission gates, paid services or major model downloads. Keep mock mode and qwen3:1.7b.
+- **Current authorization:** Focused security/product checks, local synthetic fixtures, read-only remote integrity checks, verified corrections and local commit; **do not push**. No shared database mutations, Google event writes, DDL, deployment, cloud inference or weakened memory gates. Keep mock mode and qwen3:1.7b.
+
+**Final quality checkpoint, 2026-10-27:** Reproduced and fixed alternate-address SSRF bypasses (IPv4-mapped IPv6, link-local and multicast), raw exception logging, unclosed provider-test dispatchers, and backend crashes when Python is missing. SEC-F7 now has a bounded deterministic override filter, rejected-history exclusion and HTTP effect tests for text/transcribed fixtures, cross-conversation denial and admin-visible escalation. Model tools remain absent; confirmation/identity/admin checks remain authoritative; arbitrary model susceptibility is still an open quality risk. Cloud refusal now asserts zero network calls. The read-only verifier replaces its obsolete empty-database assumption with populated booking integrity checks. Current evidence, dependency residuals and outstanding gates are recorded in V1_READINESS.md.
+
+Verification: **319/319 backend, 27/27 frontend**, both typechecks/builds PASS. Backend audit zero after compatible test-tool upgrade; frontend two moderate Router package findings retained with scoped assessment. Owner signed in; read-only loaded/empty admin screens and customer entry checked at desktop/tablet/mobile. Found and fixed browser-clock/booking-timezone mismatch across admin/chat/call offers and collapsed mobile search. Remote catalog/integrity SELECTs PASS; 1 customer/37 conversations/1 cancelled appointment unchanged. Rebuilt backend restarted alone on loopback 8787, health/readiness 200, mock preserved. Live STT script BLOCKED at 1.13 GB free against 1.5 GB floor; new real-model corpus deferred under RAM pressure. Docker engine unavailable, so fresh isolated PostgreSQL replay BLOCKED. No shared application-data or Google event writes; no push.
+
+**SEC-F13 high-impact finding:** Actual runtime-pool SELECT reports `postgres`, BYPASSRLS, audit mutation, schema CREATE and application-table ownership. This is a least-privilege **FAIL**, despite the correctly restricted service_role grant matrix. Verifier now tests the actual session and fails honestly; its five regression tests pass. Remediation requires separately authorized role/grant DDL and credential rollout, outside this gate. Production readiness remains BLOCKED; no silent role switch or schema change made.
+
+**Historical checkpoints below:** missing Google settings, empty tables, pending consent/Q3 and older test counts describe their dated checkpoint only. OAuth is connected, Q3 finished, and current mode is mock. Earlier planned stage registers are not current readiness evidence.
 
 **Voice verification, 2026-10-26:** 234 backend tests PASS before migration work, 16 frontend tests PASS, backend typecheck/build and frontend build PASS. Two-turn recorder regression FAILS with original adapter (first utterance submitted twice), PASSES with fix. Real local qwen3:1.7b synthetic dialogue PASS including 3BHK → 80 lakh context → site visit asking for missing name. Earlier live reruns exposed greeting misclassification and invented identity; routing and identity-evidence guards now cover both. STT script BLOCKED at 1.19 GB free / 1.5 GB gate. Genuine microphone capture, acoustic echo/barge-in and end-to-end live audio remain unverified.
 
@@ -144,7 +152,7 @@ NOT_APPLICABLE — no incidents.
 - **Next action:** Owner manually rechecks the revised voice path, especially date follow-up, transcript accuracy, echo/barge-in, mute and text handoff. Microphone/STT now exercised; comprehensive acoustic quality and post-fix human dialogue remain unverified. Cold model loading/RAM pressure remain environmental limits. No further Calendar writes or push authorized; no unrelated features.
 - **G01 status:** PASS — decision recorded 2026-10-24 in §5, bound to PROJECT/PLAN/TESTING v0.2. Q1 resolved (Supabase, platform-only approval). Q4 deferred to G02 (now presented in ADR-0006).
 - **After G02 approval:** record decision in §5 ledger → Stage 3 backend foundation (scaffold + migrations per approved design; first-migration application needs its own action authorization per PLAN §4).
-- **Remaining gates:** secure Google credential configuration needs owner authorization; Google consent is owner-completed; real Calendar writes need separate Q3 naming a dedicated test calendar. Live STT needs sufficient RAM; do not lower admission gates. SEC-F7 remains open.
+- **Remaining gates (current):** OAuth connected and bounded Q3 completed. Further Calendar writes need new scoped authorization. See V1_READINESS.md: live voice/RAM, isolated PostgreSQL replay/Docker, retention/deployment/Auth hardening and residual SEC-F7 model susceptibility remain open; do not lower admission gates.
 - **On resume, load:** this register (control §1, unknowns §3, evidence §4); skill governance is distilled and does not need re-reading unless invalidated; ai-capabilities SKILL/RULES when AI stages begin.
 - **Freshness comparisons:** verify workspace contents and git state match §8 record; re-verify Ollama/Supabase identity before dependent stages reuse this evidence.
 

@@ -166,21 +166,39 @@ export async function verify(pool) {
   checks.push(
     await run(
       pool,
-      "application tables empty (pre-E2E state)",
+      "populated booking integrity (read-only; emptiness is not a readiness requirement)",
       `select
          (select count(*) from public.customers) as customers,
          (select count(*) from public.conversations) as conversations,
-         (select count(*) from public.appointments) as appointments`,
+         (select count(*) from public.appointments) as appointments,
+         (select count(*) from public.appointments a left join public.conversations c on c.id=a.conversation_id
+          where a.conversation_id is not null and c.id is null) as orphan_appointments,
+         (select count(*) from public.appointments where status='confirmed' and google_event_id is null) as confirmed_without_event,
+         (select count(*) from (select google_event_id from public.appointments where google_event_id is not null
+          group by google_event_id having count(*) > 1) d) as duplicate_events,
+         (select count(*) from public.appointments where status='unresolved') as unresolved_appointments`,
       (rows) => ({
         ok:
-          Number(rows[0].customers) === 0 &&
-          Number(rows[0].conversations) === 0 &&
-          Number(rows[0].appointments) === 0,
-        detail: `customers=${rows[0].customers} conversations=${rows[0].conversations} appointments=${rows[0].appointments}`,
+          Number(rows[0].orphan_appointments) === 0 &&
+          Number(rows[0].confirmed_without_event) === 0 &&
+          Number(rows[0].duplicate_events) === 0 &&
+          Number(rows[0].unresolved_appointments) === 0,
+        detail: `customers=${rows[0].customers} conversations=${rows[0].conversations} appointments=${rows[0].appointments}; orphan=${rows[0].orphan_appointments} confirmed_without_event=${rows[0].confirmed_without_event} duplicate_events=${rows[0].duplicate_events} unresolved=${rows[0].unresolved_appointments}`,
       }),
     ),
   );
 
+  checks.push(await run(pool, "actual PostgreSQL runtime least privilege",
+    `select current_user as runtime_role, r.rolbypassrls as bypass_rls,
+       has_table_privilege(current_user,'public.audit_log','update,delete') as audit_mutation,
+       has_schema_privilege(current_user,'public','create') as schema_create,
+       exists(select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace
+         where n.nspname='public' and c.relkind='r' and c.relowner=r.oid) as owns_app_tables
+     from pg_roles r where r.rolname=current_user`,
+    rows => ({
+      ok: rows[0]?.audit_mutation === false && rows[0]?.schema_create === false && rows[0]?.owns_app_tables === false,
+      detail: `role=${rows[0]?.runtime_role} bypass_rls=${rows[0]?.bypass_rls} audit_mutation=${rows[0]?.audit_mutation} schema_create=${rows[0]?.schema_create} owns_app_tables=${rows[0]?.owns_app_tables}`,
+    })));
   return checks;
 }
 
@@ -199,7 +217,7 @@ async function main() {
       const { kind, hint } = classifyPgAuthError(message);
       console.error(`[2/5] BLOCKED (${kind}): ${hint}`);
     } else {
-      console.error(`[2/5] BLOCKED: ${message}`);
+      console.error("[2/5] BLOCKED: database connection failed (raw error suppressed).");
     }
     process.exit(2);
   }
@@ -232,7 +250,7 @@ async function main() {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   main().catch((err) => {
-    console.error(err instanceof Error ? err.message : err);
+    console.error("Read-only verification failed unexpectedly (raw error suppressed).");
     process.exit(1);
   });
 }

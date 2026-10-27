@@ -73,9 +73,9 @@ export async function createProductionApp(
   // Failure-safe: any verification error (including unreachable database)
   // yields the fail-closed disabled store — composition never blocks on I/O.
   const vaultVerification = await verifyVault(db.pgPool).catch(
-    (err): { ok: false; reasons: string[] } => ({
+    (): { ok: false; reasons: string[] } => ({
       ok: false,
-      reasons: [`verification unreachable: ${err instanceof Error ? err.message : "unknown"}`],
+      reasons: ["Vault verification unreachable (raw database error suppressed)"],
     }),
   );
   if (!vaultVerification.ok) {
@@ -238,7 +238,7 @@ export async function main(): Promise<void> {
 const invokedDirectly = import.meta.url === pathToFileURL(process.argv[1] ?? "").href;
 if (invokedDirectly) {
   main().catch((err) => {
-    console.error(err);
+    createLogger({ NODE_ENV: "production", LOG_LEVEL: "error" }).error({ err }, "Backend startup failed. Check configuration, TLS certificate and local dependencies.");
     process.exit(1);
   });
 }

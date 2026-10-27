@@ -12,6 +12,22 @@ const VENV_PY = "sidecar/whisper/.venv/Scripts/python.exe";
 const hasVenv = existsSync(VENV_PY);
 
 describe.skipIf(!hasVenv)("sidecar process lifecycle (real python, no model)", () => {
+  it("missing Python fails safely and permits retry without crashing the backend", { timeout: 10000 }, async () => {
+    const lifecycle = new SidecarLifecycle({
+      port: 8794, pythonCmd: "cleardesk-missing-python-fixture", appPath: "fixture",
+      minFreeBytes: 0, // no executable/model can start in this failure fixture
+    });
+    await expect(lifecycle.ensureStarted()).rejects.toMatchObject({ code: "STT_FAILED" });
+    await lifecycle.stop();
+    await expect(lifecycle.ensureStarted()).rejects.toMatchObject({ code: "STT_FAILED" });
+  });
+
+  it("a Python process that exits before health fails promptly", { timeout: 10000 }, async () => {
+    const lifecycle = new SidecarLifecycle({ port: 8794, pythonCmd: VENV_PY, appPath: "missing-sidecar-fixture.py", minFreeBytes: 0 });
+    await expect(lifecycle.ensureStarted()).rejects.toMatchObject({ code: "STT_FAILED" });
+    await lifecycle.stop();
+  });
+
   it("starts the real sidecar, reports health, and stops cleanly", { timeout: 60_000 }, async () => {
     const lifecycle = new SidecarLifecycle({
       port: 8793,

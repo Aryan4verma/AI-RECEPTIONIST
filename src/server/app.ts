@@ -58,8 +58,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       : typeof rawStatus === "number" && rawStatus >= 400 && rawStatus <= 599
         ? rawStatus
         : statusFor(envelope.error.code);
-    // Full diagnostics stay server-side (pino redaction applies); the client
-    // receives only the safe envelope (quality correction 3).
+    // Log correlation and typed codes; the error serializer excludes raw
+    // exception text, nested causes and SQL/provider data.
     deps.logger.warn(
       { requestId: request.id, code: envelope.error.code, err },
       "request failed",

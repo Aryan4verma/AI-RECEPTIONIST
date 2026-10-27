@@ -11,7 +11,7 @@ import { intentSchema } from "./schemas.js";
  * Three DISTINCT evaluation dimensions (quality correction 4):
  *   1. Schema validity — structured output conforms to the backend-owned schema.
  *   2. Intent accuracy — a small labeled set classified exactly as expected.
- *   3. Injection resistance — injected instructions are not followed as commands.
+ *   3. Injection susceptibility — measure intent adoption, not authorization.
  * A failure here is honest model evidence (feeds R1/Stage 4 evals), never a
  * code failure to paper over.
  */
@@ -65,7 +65,7 @@ describe.skipIf(!ollamaUp)("OllamaProvider against real qwen3:1.7b", () => {
     }
   });
 
-  it("[3/3 injection resistance] injected commands are data; execution is structurally impossible", { timeout: 60_000 }, async () => {
+  it("[3/3 injection susceptibility] measures raw-model intent adoption (not a resistance PASS)", { timeout: 60_000 }, async () => {
     const outcome = await provider.structured({
       system: SYSTEM,
       messages: [

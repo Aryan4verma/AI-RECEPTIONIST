@@ -4,6 +4,16 @@ Status: backend feature-complete for the frontend phase; **not** declared produc
 
 ## Current continuation — 2026-10-27
 
+**V1 final quality/security gate:** See [V1_READINESS.md](V1_READINESS.md) for current PASS/FAIL/BLOCKED/NOT TESTED evidence. Started clean at `bd7a65a`; focused corrections cover non-public IP normalization for SSRF, exception/startup log confidentiality, provider-dispatcher cleanup, safe Python startup failure/retry, and SEC-F7 deterministic routing/history boundaries. No model tools or implicit confirmation added. Cloud inference remains refused. The live verifier now checks populated booking integrity rather than requiring an empty database. All work is local; **do not push**.
+
+Keep `CALENDAR_MODE=mock`. Remote review was SELECT-only: seven migrations, twelve RLS tables, admin-scoped policies, service-only Google integration and denied anon/authenticated Vault plaintext reads; the sole retained Q3 appointment is cancelled. No new event/record/credential/configuration writes. Fresh isolated PostgreSQL replay needs Docker's engine; current real voice/model replay needs RAM headroom. Retention execution and deployment gates remain incomplete. The rebuilt normal backend was restarted: one loopback listener on 8787; health/readiness 200.
+
+Final verification: **319 backend tests**, **27 frontend tests**, both TypeScript/builds PASS. Backend full/runtime dependency audits zero; frontend retains two moderate Router package findings with no affected path found in current usage. Secret-literal/token-pattern scan found zero in tracked/nonignored sources, builds and task runtime logs (not a full historical/Vault scan). Owner-authenticated read-only admin checks and customer entry screens passed selected responsive checks. Appointment clocks now match their supplied timezone, including customer chat/call offers; mobile directory search no longer collapses beside filters. See the readiness matrix for exact scope and exclusions.
+
+**Production security FAIL / remediation BLOCKED (SEC-F13):** The actual backend PG pool uses `postgres`, with RLS bypass, schema CREATE/table ownership and audit UPDATE/DELETE privileges. Restricted service_role grants do not constrain that session. The enhanced read-only verifier correctly returns FAIL for runtime least privilege while catalog/integrity checks pass. Required next security work: separately reviewed/authorized dedicated runtime-role/grant design, credential rollout and real-role regression. No DDL, credential change or silent SET ROLE was performed. Supabase leaked-password protection is also disabled; production sign-off remains blocked.
+
+**Historical checkpoint trail follows.** Statements about missing settings, empty data, pending consent or pending Q3 describe their checkpoint, not current state. Google is connected with owner access; the earlier one-event Q3 authorization is consumed.
+
 **Voice/AI reliability, 2026-10-27:** Owner-assisted real Chrome microphone capture reached genuine Faster-Whisper after two honest RESOURCE_LIMIT refusals (1.36/1.45 GB free vs the test's unchanged 1.5 GB gate). Seven successful uploads had distinct SHA-256 hashes; cold STT 4.753s, warm 1.251–1.724s. The owner reported working voice but slow replies and repeated date questions; the first inspected transcript misheard “flat” as “flight”. This is NOT an acoustic-quality PASS: full four-line accuracy, echo/barge-in and post-fix handoff still need a manual recheck. Browser inspection later became unavailable. Test records were in memory only, with no Supabase client, real Calendar adapter, saved mic audio or credential changes. Redacted hashes/timings are outside Git in the Codex `voice-reliability` artifact folder.
 
 Proven fixture regressions fixed: muting discarded rather than uploaded a partial utterance; a session created after call termination is now ended; silent capture buffers recycle every 10s; Continue in chat releases the microphone while preserving the backend session through unmount. STT malformed/null responses remain typed failures; upload bytes avoid an extra Buffer copy. Runtime now prefers the project Python venv used by the real STT verification (global Python had different ctranslate2/av versions). RAM protection and sequential inference gate remain intact. qwen3:1.7b is unchanged; per-request keep_alive=60s replaces five-minute idle residency. Observed automatic unload left zero loaded models, free RAM 0.35→1.93 GB. Built frontend preview used 74 MB working set vs dev server 101 MB in this run; no Windows settings or unrelated processes changed.
@@ -39,7 +49,9 @@ Next: owner reviews the redesign and bounded Q3 evidence above. Any further real
 ## Local startup
 
 ```bash
-cp .env.example .env   # fill: SUPABASE_SERVICE_ROLE_KEY, SUPABASE_DB_URL (session pooler,
+# First setup ONLY, if .env does not exist: copy .env.example to .env.
+# Preserve the existing configured .env. Required: SUPABASE_SERVICE_ROLE_KEY,
+# SUPABASE_DB_URL (session pooler,
                        # user postgres.<project-ref>), SUPABASE_DB_CA_CERT_PATH, TOKEN_HASH_SECRET
 npm ci
 npm run build && npm start          # or: npm run dev (tsx)

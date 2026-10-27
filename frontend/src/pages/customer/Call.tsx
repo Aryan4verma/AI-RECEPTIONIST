@@ -253,7 +253,7 @@ export default function Call() {
                   {state.offer && (
                     <div className="self-start rounded-2xl border border-brass-500/40 bg-brass-300/10 px-4 py-3">
                       <p className="micro !text-brass-600">Proposed appointment</p>
-                      <p className="mt-1 font-display text-[15px] text-ink">{formatDateTime(state.offer.slot)}</p>
+                      <p className="mt-1 font-display text-[15px] text-ink">{formatDateTime(state.offer.slot, state.offer.timezone)}</p>
                       <p className="text-xs text-ink-2">
                         {state.offer.durationMinutes} minutes · {state.offer.timezone}
                       </p>

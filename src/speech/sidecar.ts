@@ -125,9 +125,19 @@ export class SidecarLifecycle {
         env: { ...process.env, WHISPER_SIDECAR_PORT: String(this.deps.port) },
         stdio: ["ignore", "pipe", "pipe"],
       });
-      this.child.unref();
+        const child = this.child;
+        let failed = false;
+        // Missing Python/dependencies must produce a typed failure, never an
+        // unhandled ChildProcess error that terminates the backend. Drain pipes
+        // without logging potentially sensitive sidecar output.
+        child.on("error", () => { failed = true; });
+        child.once("exit", () => { failed = true; });
+        child.stdout?.resume();
+        child.stderr?.resume();
+        child.unref();
       const fetchFn = this.deps.fetchFn ?? fetch;
       for (let i = 0; i < 120; i++) {
+          if (failed || this.child !== child) throw new AppError("STT_FAILED", "The speech service could not start. Check the local Python environment.");
         try {
           const res = await fetchFn(new URL("/health", this.baseUrl), { signal: AbortSignal.timeout(1500) });
           if (res.ok) return;
@@ -140,6 +150,9 @@ export class SidecarLifecycle {
     })();
     try {
       await this.starting;
+      } catch {
+        await this.stop();
+        throw new AppError("STT_FAILED", "The speech service could not start. Check the local Python environment.");
     } finally {
       this.starting = null;
     }
@@ -160,6 +173,7 @@ export class SidecarLifecycle {
     if (!this.child) return;
     const child = this.child;
     this.child = null;
+      if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
         child.kill("SIGKILL");

@@ -4,7 +4,7 @@
 | --- | --- |
 | Project ID | AI-RECEPTIONIST |
 | Document ID | TESTING |
-| Version / date | v0.5 — 2026-10-24 (v0.2 scope APPROVED at G01; TC-32…TC-37 APPROVED at G02 conditional approval; TC-38…TC-42 added as Stage 3 quality-correction regression tests) |
+| Version / date | v0.6 — 2026-10-27 (current evidence linked below; original acceptance inventory retained) |
 | Owner | ZCode execution agent (maintainer); human decision authority: project owner |
 | Scope | Acceptance and verification plan for the backend + AI phase |
 | Document lifecycle | approved (G01 for v0.2 scope; G02 conditional approval for TC-32…TC-37, conditions satisfied 2026-10-24) |
@@ -14,14 +14,13 @@
 
 ## 1. [REQUIRED] Control and baseline
 
-- **Native runner:** none exists yet (greenfield). `[P]` Vitest as the greenfield TypeScript runner (STACK default) — confirmed at G02. Commands to be defined at Stage 3 scaffold (planned shape: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`).
-- **Repository/content identity:** git repo `C:\AI RECEPTIONIST` branch `main`; commits `aabe955` (register), `ef36fda` (register SHA update). Requirements bundle adds PROJECT/PLAN/TESTING v0.1.
-- **Inherited failures:** none (greenfield).
-- **Isolated environments available:** local Node/Python; Ollama at `localhost:11434` (verified); Supabase project `ogxdszjypswutekqgorb` (empty — safe target pending authorization); mock calendar adapter (in-process); real Google Calendar — **no access until Q3 authorization**.
+- **Native runner:** Vitest 5.0.5. Backend: `npm test -- --exclude '**/*.live.test.ts' --maxWorkers=1`, `npm run typecheck`, `npm run build`. Frontend: `npm test -- --maxWorkers=1`, `npm run build` (includes TypeScript). No separate lint script exists.
+- **Current evidence:** [V1_READINESS.md](V1_READINESS.md), baseline main `bd7a65a`, 2026-10-27. Fixture, real-process, real-model, browser and read-only DB layers are reported separately.
+- **Isolated environments:** in-memory repositories + mock Calendar and local fixture HTTP servers. The dedicated local PostgreSQL harness requires a working Docker engine (currently unavailable). Shared Supabase is populated and **must not be seeded/reset**. Q3 real Calendar create/cancel was completed previously; no further event writes are authorized. Live scripts remain RAM-gated.
 
 ## 2. [REQUIRED] Requirement-to-proof matrix
 
-All rows are **PLANNED** — no check below has been executed. Statuses live in `PROGRESS.md` §4 when executed. Layers: UT unit (mocked), IT integration (real HTTP/service in-process), RM real-model (actual Ollama), RDB real database (authorized Supabase), RC real calendar (authorized test calendar only), E2E end-to-end.
+The table retains the **historical acceptance inventory**; legacy PLANNED cells are not a statement that the implemented features remain untested. Use [V1_READINESS.md](V1_READINESS.md) for current executed results and limitations, and dated PROGRESS evidence for earlier runs. Layers: UT unit, IT fixture HTTP/service integration, RM real model, RDB real database, RC real calendar, E2E end-to-end.
 
 | Test/check ID | Requirement / invariant | Scenario / asserted outcome | Layer / role / fixture | Command / evidence (planned) | Status / limitation |
 | --- | --- | --- | --- | --- | --- |
