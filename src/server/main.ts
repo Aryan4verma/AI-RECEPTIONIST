@@ -29,6 +29,7 @@ import { PgModelProviderRepo } from "../db/pg/repos.js";
 import { secretStoreFromVerification, verifyVault } from "../secrets/vault.js";
 import { SidecarLifecycle, SidecarSpeechToText } from "../speech/sidecar.js";
 import { resolve } from "node:path";
+import { existsSync } from "node:fs";
 import { buildApp } from "./app.js";
 
 /** Initial selected local runtime model (registry/switching arrives in Stage 4). */
@@ -150,9 +151,10 @@ export async function createProductionApp(
 
   // Speech sidecar (ADR-0005): on-demand lifecycle with a RAM admission
   // check; STT holds the shared inference gate (sequential with the LLM).
+  const speechPython = resolve(process.platform === "win32" ? "sidecar/whisper/.venv/Scripts/python.exe" : "sidecar/whisper/.venv/bin/python");
   const sidecar = new SidecarLifecycle({
     port: env.WHISPER_SIDECAR_PORT,
-    pythonCmd: process.platform === "win32" ? "python" : "python3",
+    pythonCmd: existsSync(speechPython) ? speechPython : process.platform === "win32" ? "python" : "python3",
     appPath: resolve("sidecar/whisper/app.py"),
     minFreeBytes: 1_200_000_000, // 1.2 GB admission floor for tiny-int8
   });

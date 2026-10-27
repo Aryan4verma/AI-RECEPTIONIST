@@ -123,6 +123,7 @@ export function useCallEngine() {
   const end = useCallback(() => {
     void engine.end().then(() => setState({ ...engine.getState() }));
   }, [engine]);
+  const handoffToText = useCallback(() => engine.end(true), [engine]);
   const toggleMute = useCallback(() => {
     engine.toggleMute();
     setState({ ...engine.getState() });
@@ -140,6 +141,7 @@ export function useCallEngine() {
     state: state ?? engine.getState(),
     start,
     end,
+    handoffToText,
     toggleMute,
     setSpeaker,
     retryVoice,

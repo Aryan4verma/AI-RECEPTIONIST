@@ -34,7 +34,7 @@ const STATE_LABEL: Record<string, string> = {
 };
 
 export default function Call() {
-  const { state, start, end, toggleMute, setSpeaker, retryVoice, isSecureContext } = useCallEngine();
+  const { state, start, end, handoffToText, toggleMute, setSpeaker, retryVoice, isSecureContext } = useCallEngine();
   const navigate = useNavigate();
   const transcriptRef = useRef<HTMLDivElement>(null);
 
@@ -43,9 +43,10 @@ export default function Call() {
   }, [state.transcript.length]);
 
   /** Keep the call's conversation for text chat: same session token. */
-  function continueInChat() {
+  async function continueInChat() {
     const s = state.session;
     if (s) sessionStorage.setItem(SESSION_KEY, JSON.stringify(s));
+    await handoffToText();
     navigate("/");
   }
 

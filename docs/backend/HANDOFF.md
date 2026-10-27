@@ -2,7 +2,15 @@
 
 Status: backend feature-complete for the frontend phase; **not** declared production-ready (see Limitations).
 
-## Current continuation — 2026-10-26
+## Current continuation — 2026-10-27
+
+**Voice/AI reliability, 2026-10-27:** Owner-assisted real Chrome microphone capture reached genuine Faster-Whisper after two honest RESOURCE_LIMIT refusals (1.36/1.45 GB free vs the test's unchanged 1.5 GB gate). Seven successful uploads had distinct SHA-256 hashes; cold STT 4.753s, warm 1.251–1.724s. The owner reported working voice but slow replies and repeated date questions; the first inspected transcript misheard “flat” as “flight”. This is NOT an acoustic-quality PASS: full four-line accuracy, echo/barge-in and post-fix handoff still need a manual recheck. Browser inspection later became unavailable. Test records were in memory only, with no Supabase client, real Calendar adapter, saved mic audio or credential changes. Redacted hashes/timings are outside Git in the Codex `voice-reliability` artifact folder.
+
+Proven fixture regressions fixed: muting discarded rather than uploaded a partial utterance; a session created after call termination is now ended; silent capture buffers recycle every 10s; Continue in chat releases the microphone while preserving the backend session through unmount. STT malformed/null responses remain typed failures; upload bytes avoid an extra Buffer copy. Runtime now prefers the project Python venv used by the real STT verification (global Python had different ctranslate2/av versions). RAM protection and sequential inference gate remain intact. qwen3:1.7b is unchanged; per-request keep_alive=60s replaces five-minute idle residency. Observed automatic unload left zero loaded models, free RAM 0.35→1.93 GB. Built frontend preview used 74 MB working set vs dev server 101 MB in this run; no Windows settings or unrelated processes changed.
+
+Owner's “28 October at 3 pm” failure was reproduced with real qwen: 26.031s and an invented year 2024. Trusted business-clock context plus bounded backend parsing now handles explicit day/month/clock and today/tomorrow, preserves ambiguity/past-date rejection and never supplies identity/confirmation. The same date resolved in 53ms to 2026-10-28 15:00 Asia/Kolkata in the synthetic test configuration. Production still uses its configured business timezone (UTC fallback if unset); none was changed remotely. Exact greeting/site-visit requests and clear non-privileged property preferences avoid redundant intent inference. Same four-turn synthetic-text dialogue: 40.725s before, 15.936s after; warm budget 5.081→2.578s; exact site-visit prompt 19.407s→1ms. Cold property inference still 13.350s on this busy laptop—no universal real-time claim.
+
+Verification: **88 focused backend tests** (75 voice/conversation/extraction/E2E + 13 production-composition), **26 frontend tests**, both TypeScript/builds PASS. Revised live STT script passed its gate at 1.93 GB: synthetic SAPI 4.665s sample transcribed exactly twice, cold 4.782s/warm 1.342s; largest Python working set 179 MB. This proves real STT with synthetic speech, not acoustic echo. Real qwen synthetic dialogue PASS; date test uses the backend parser without model inference. Detailed manual checks: `docs/frontend/CALLING.md`. No new shared database mutations or Google event writes. Normal backend restored with **CALENDAR_MODE=mock**; changes are local only, no push authorized.
 
 **Q3 bounded live test — 2026-10-27: PASS (API/DB/Google; cancellation UI observed).** Owner explicitly authorized one synthetic booking on `86949aaeefde3510e56c30f0a3dd39d33dd1c1a9cbb4398815069547f9970091@group.calendar.google.com`. Live connection verified `connected=true`, `storeAvailable=true`, calendar name `AI Receptionist Test`, Owner access and successful OAuth refresh. Before execution, adapter corrections added 30s request/body deadlines and strict event ID/private-key/status validation; deleted-event tombstones are absent, never active bookings. 141 focused fixture/regression tests and backend TypeScript/build PASS.
 
@@ -26,7 +34,7 @@ Verification: frontend 16/16 tests PASS; `npm run build` includes TypeScript and
 
 Verification: frontend **22/22 tests PASS** (six new shared-UI semantic regressions plus the existing voice tests); TypeScript/Vite production build PASS. Live pages inspected at representative 1440/1280/768/375/320px widths with no observed page-level horizontal overflow; transcript drawer focus/Escape/return, empty search recovery, unsaved draft discard, native invalid-duration blocking and local-model prefill verified. Login image renders at its full intended height. Live customer/appointment lists are empty, so populated details and destructive actions were not exercised or seeded. One additional anonymous chat session was opened and ended without messages; no customer, appointment, configuration, provider, OAuth or Google event writes. `CALENDAR_MODE=mock` preserved; backend contracts and recorder engine unchanged. Screenshots are local verification artifacts outside Git.
 
-Next: owner reviews the redesign and bounded Q3 evidence above. Any further real Google event writes require new scoped approval. Voice live microphone/STT verification remains outstanding under unchanged RAM gates; no further features authorized.
+Next: owner reviews the redesign and bounded Q3 evidence above. Any further real Google event writes require new scoped approval. Comprehensive post-fix acoustic verification remains outstanding; microphone/STT measurements are recorded above. No further features authorized.
 
 ## Local startup
 
@@ -65,7 +73,7 @@ Speech sidecar starts on demand (RAM-gated); Python venv: `sidecar/whisper/.venv
 
 ## Limitations / genuine blockers (do not paper over)
 
-- **Real STT unmeasured** — RAM-gated (BLOCKED at ~0.5–0.9 GB free vs 1.5 GB gate); script ready (`scripts/speech-live-test.mjs`).
+- **Acoustic verification incomplete** — real STT and owner microphone uploads measured on 2026-10-27 (above); transcript accuracy, echo/barge-in and the revised human dialogue still need recheck. RAM admission remains enforced.
 - **Real Google Calendar: bounded create/cancel test PASS on 2026-10-27** (evidence above); mock adapter restored. Rescheduling and further live event writes remain unauthorized. Recovery is an explicit service operation; no automatic scheduler is wired.
 - **SEC-F7 open**: qwen3:1.7b adopts injected intents (2/2 probes; no execution path exists — backend decides everything).
 - Migration 0007 is applied and verified (Google integration singleton table, not FK indexes). Cloud-provider activation remains separately gated.

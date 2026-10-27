@@ -29,9 +29,8 @@ const intent = (value: string) => ({ schema_version: 1, intent: value });
 describe("property enquiry orchestration (fixture scope)", () => {
   it("greets, remembers 3BHK across a budget turn, and routes a site visit through existing extraction", async () => {
     const { provider, requests } = fixture([
-      intent("greeting"),
-      intent("greeting"), { property_type: "3BHK flat", location: null, budget: null },
-      intent("greeting"), { property_type: "3BHK flat", location: null, budget: "80 lakh" },
+      { property_type: "3BHK flat", location: null, budget: null },
+      { property_type: "3BHK flat", location: null, budget: "80 lakh" },
       intent("book_appointment"), { ...emptyExtraction(), purpose: { state: "known", value: "site visit" } },
     ]);
     const conversations = new MemoryConversationRepo();
@@ -64,11 +63,12 @@ describe("property enquiry orchestration (fixture scope)", () => {
     expect(visit.offer).toBeUndefined();
     expect((await bookingState.get(row.id))?.state).toBe("COLLECT_DETAILS");
     expect(bookingState.appointments).toHaveLength(0);
+    expect(requests).toHaveLength(4); // no separate intent inference for clear preferences
   });
 
   it("all preferences trigger a real handoff; invented preference phrases are discarded", async () => {
     const { provider } = fixture([
-      intent("property_enquiry"), { property_type: "3BHK", location: "Pune", budget: "80 lakh" },
+      { property_type: "3BHK", location: "Pune", budget: "80 lakh" },
       { property_type: "3BHK", location: "Invented City", budget: "80 lakh" },
     ]);
     const conversations = new MemoryConversationRepo();

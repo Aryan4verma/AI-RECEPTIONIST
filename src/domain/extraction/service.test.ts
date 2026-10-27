@@ -67,6 +67,41 @@ const completeTurn: Partial<ExtractionResult> = {
 };
 
 describe("FR-3 extraction service", () => {
+  it("time shortcuts do not suppress an explicit source-checked identity correction", async () => {
+    const svc = new ExtractionService({ provider: scriptedExtraction([{ customer_name: { state: "known", value: "Jane Doe" } }]), config, now: () => new Date("2026-10-27T08:00:00Z") });
+    const current = { ...emptyExtraction(), ...completeTurn, requested_time: { state: "unknown", reason: "not supplied" } } as ExtractionResult;
+    const result = await svc.mergeTurn(current, "My name is Jane Doe; 28 October at 3 pm.");
+    expect(result.customer_name).toEqual({ state: "known", value: "Jane Doe" });
+    expect(result.requested_time).toEqual({ state: "known", value: "2026-10-28T15:00:00" });
+  });
+  it("an exact site-visit request supplies only its stated purpose without expensive inference", async () => {
+    const provider = scriptedExtraction(["malformed"]);
+    provider.structured = async () => { throw new Error("unnecessary inference"); };
+    const service = new ExtractionService({ provider, config });
+    const result = await service.mergeTurn(null, "Can I book a site visit?");
+    expect(result.purpose).toEqual({ state: "known", value: "site visit" });
+    expect(service.missingFields(result)).toContain("customer_name");
+    expect(service.missingFields(result)).toContain("contact");
+    expect(service.missingFields(result)).toContain("requested_time");
+  });
+  it.each(["missing", "stale"])("a %s appointment time uses a trusted clock and cannot replace verified identity", async mode => {
+    const requests: StructuredRequest<z.ZodTypeAny>[] = [];
+    const provider: LLMProvider = {
+      ...scriptedExtraction(["malformed"]),
+      structured: async request => {
+        requests.push(request);
+        const value = request.schema.parse({ requested_time: { state: "known", value: "2026-10-28T15:00:00" } });
+        return { status: "ok", value, raw: "" };
+      },
+    };
+    const svc = new ExtractionService({ provider, config, businessDefaults: { defaultTimezone: "Asia/Kolkata", defaultDurationMinutes: 30 }, now: () => new Date("2026-10-27T08:00:00Z") });
+    const current = { ...emptyExtraction(), ...completeTurn, requested_time: mode === "missing" ? { state: "unknown", reason: "not supplied" } : { state: "known", value: "2024-10-28T15:00:00" } } as ExtractionResult;
+    const result = await svc.mergeTurn(current, "Book my site visit on 28 October at 3 pm.");
+    expect(result.customer_name).toEqual(current.customer_name);
+    expect(result.contact).toEqual(current.contact);
+    expect((await svc.resolve(result))?.start.toISOString()).toBe("2026-10-28T09:30:00.000Z");
+    expect(requests).toHaveLength(0); // the explicit date cannot be lost to model uncertainty
+  });
   it("discards invented name/contact values rather than persisting model placeholders", async () => {
     const svc = makeService([{ customer_name: { state: "known", value: "John Doe" }, contact: { state: "known", value: "john@example.com" } }]);
     const result = await svc.mergeTurn(null, "Can I book a site visit for tomorrow?");
@@ -90,7 +125,7 @@ describe("FR-3 extraction service", () => {
   it("malformed model output keeps the prior state — never guesses", async () => {
     const svc = makeService(["malformed"]);
     const merged = await svc.mergeTurn(null, "book me tomorrow");
-    expect(merged).toEqual(emptyExtraction());
+    expect(merged).toEqual({ ...emptyExtraction(), requested_time: expect.objectContaining({ state: "unknown" }) });
     expect(svc.isComplete(merged)).toBe(false);
   });
 

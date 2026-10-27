@@ -110,6 +110,11 @@ describe("SidecarSpeechToText client (fixture HTTP)", () => {
     const stt = new SidecarSpeechToText({ baseUrl: "http://127.0.0.1:1" });
     await expect(stt.transcribe(wavBytes(), 60)).rejects.toMatchObject({ code: "STT_FAILED" });
   });
+
+  it.each(["not json", "null"])("malformed response %s is a typed STT failure, not an unhandled parser error", async body => {
+    const stt = new SidecarSpeechToText({ baseUrl: "http://fixture", fetchFn: (async () => new Response(body, { status: 200 })) as typeof fetch });
+    await expect(stt.transcribe(wavBytes(), 60)).rejects.toMatchObject({ code: "STT_FAILED" });
+  });
 });
 
 describe("SidecarLifecycle admission (RAM guard)", () => {

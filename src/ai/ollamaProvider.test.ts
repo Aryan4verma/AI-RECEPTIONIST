@@ -26,10 +26,14 @@ describe("OllamaProvider", () => {
   });
 
   it("returns a validated structured result (TC-02 happy path)", async () => {
+    let keepAlive: unknown;
     const provider = new OllamaProvider(
       "http://localhost:11434",
       "qwen3:1.7b",
-      fetchJson({ message: { content: '{"intent":"book_appointment"}' }, done_reason: "stop" }),
+      (async (_url, init) => {
+        keepAlive = JSON.parse(String(init?.body)).keep_alive;
+        return fetchJson({ message: { content: '{"intent":"book_appointment"}' }, done_reason: "stop" })(_url, init);
+      }) as typeof fetch,
     );
     const outcome = await provider.structured({
       system: "system prompt",
@@ -40,6 +44,7 @@ describe("OllamaProvider", () => {
       maxOutputTokens: 256,
     });
     expect(outcome).toMatchObject({ status: "ok", value: { intent: "book_appointment" } });
+    expect(keepAlive).toBe("60s");
   });
 
   it("classifies malformed JSON as invalid_output (TC-27)", async () => {

@@ -102,8 +102,65 @@ async function finishSpeech(w: World, engine: CallEngine, t: { now: number }) {
 }
 
 describe("CallEngine", () => {
+  it("text handoff releases the microphone without ending its backend session, including unmount cleanup", async () => {
+    const { w, deps } = makeWorld();
+    const { engine } = await startCall(deps);
+    await finishSpeech(w, engine, { now: 0 });
+    await engine.end(true);
+    await engine.end();
+    expect(w.micEnded).toBe(true);
+    expect(w.conversationEnded).toBe(false);
+    expect(engine.getState().session?.id).toBe("c1");
+  });
+  it("mute discards a partial utterance without uploading it", async () => {
+    const { w, deps } = makeWorld();
+    let uploads = 0;
+    deps.api.postAudio = async () => { uploads++; return { transcript: "unexpected", reply: "unexpected" }; };
+    const { engine } = await startCall(deps);
+    await finishSpeech(w, engine, { now: 0 });
+    w.levels = [0.05]; engine.tick(100); engine.tick(500);
+    engine.toggleMute();
+    engine.tick(2000); await flush(); await flush();
+    expect(uploads).toBe(0);
+    expect(w.recorder.stopped).toBe(1);
+    engine.toggleMute(); await flush();
+    expect(engine.getState().status).toBe("listening");
+    expect(w.recorder.started).toBe(2);
+    await engine.end();
+  });
+
+  it("ends a session that finishes connecting after the call was terminated", async () => {
+    const { deps } = makeWorld();
+    let connected!: (session: { conversationId: string; greeting: string; accessToken: string }) => void;
+    const ended: string[] = [];
+    deps.api.startConversation = () => new Promise(resolve => { connected = resolve; });
+    deps.api.endConversation = async id => { ended.push(id); };
+    const engine = new CallEngine(deps);
+    const started = engine.start(); await flush();
+    await engine.end();
+    connected({ conversationId: "late-session", greeting: "Hello", accessToken: "fixture" });
+    await started;
+    expect(ended).toEqual(["late-session"]);
+    expect(engine.getState().status).toBe("ended");
+  });
+
+  it("recycles silent idle capture without STT uploads or transcript changes", async () => {
+    const { w, deps } = makeWorld();
+    let uploads = 0;
+    deps.api.postAudio = async () => { uploads++; return { transcript: "unexpected", reply: "unexpected" }; };
+    const { engine } = await startCall(deps);
+    await finishSpeech(w, engine, { now: 0 });
+    engine.tick(100); engine.tick(10100); await flush(); await flush();
+    expect(uploads).toBe(0);
+    expect(w.recorder.stopped).toBe(1);
+    expect(w.recorder.started).toBe(2);
+    expect(engine.getState().transcript).toHaveLength(1);
+    await engine.end();
+  });
   it("silence, separated noise blips and muted input never submit a customer turn", async () => {
     const { w, deps } = makeWorld();
+    let uploads = 0;
+    deps.api.postAudio = async () => { uploads++; return { transcript: "unexpected", reply: "unexpected" }; };
     const { engine } = await startCall(deps);
     await finishSpeech(w, engine, { now: 0 });
     let now = 100;
@@ -112,12 +169,14 @@ describe("CallEngine", () => {
       w.levels = [0]; engine.tick(now += 300);
     }
     engine.tick(now += 30000);
-    expect(w.recorder.stopped).toBe(0);
+    await flush();
+    expect(uploads).toBe(0);
     engine.toggleMute();
     w.levels = [0.2];
     for (let i = 0; i < 10; i++) engine.tick(now += 90);
     w.levels = [0]; engine.tick(now += 2000);
-    expect(w.recorder.stopped).toBe(0);
+    await flush();
+    expect(uploads).toBe(0);
     await engine.end();
   });
 

@@ -32,7 +32,7 @@ export class SidecarSpeechToText implements SpeechToText {
         res = await fetchFn(new URL(`/transcribe?max_seconds=${maxSeconds}`, this.deps.baseUrl), {
           method: "POST",
           headers: { "content-type": "application/octet-stream" },
-          body: Buffer.from(audio),
+          body: Buffer.from(audio.buffer, audio.byteOffset, audio.byteLength),
           signal: AbortSignal.timeout(this.deps.timeoutMs ?? 30_000),
         });
       } catch (err) {
@@ -51,8 +51,10 @@ export class SidecarSpeechToText implements SpeechToText {
           status: res.status,
         });
       }
-      const body = (await res.json()) as { transcript?: string };
-      if (typeof body.transcript !== "string") {
+      const body = (await res.json().catch(() => {
+        throw new AppError("STT_FAILED", "Speech recognition returned an invalid response.");
+      })) as { transcript?: string };
+      if (typeof body?.transcript !== "string") {
         throw new AppError("STT_FAILED", "Speech recognition returned an invalid response.");
       }
       return { transcript: body.transcript, latencyMs: Date.now() - started };

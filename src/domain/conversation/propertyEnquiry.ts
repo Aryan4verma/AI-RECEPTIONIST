@@ -12,7 +12,7 @@ export const propertyEnquirySchema = z.strictObject({
 /** Narrow, non-privileged routing guard for clear enquiries a small model can mislabel. */
 export function isPropertyInterest(text: string): boolean {
   if (/\b(?:available|availability|prices?|costs?|inventory)\b/i.test(text)) return false;
-  return /\b(?:want|looking|interested|need)\b[^.!?]{0,100}\b(?:flat|apartment|home|house|property|bhk)\b/i.test(text);
+  return /\b(?:want|looking|interested|need)\b[^.!?]{0,100}\b(?:flat|apartment|home|house|property|(?:\d+\s*)?bhk)\b/i.test(text);
 }
 
 export function isPropertyDetail(text: string): boolean {

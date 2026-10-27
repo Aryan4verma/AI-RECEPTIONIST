@@ -54,6 +54,17 @@ function makeHarness(provider?: LLMProvider, faults?: CalendarFaults): TestHarne
 const slot = new Date(Date.now() + 24 * 60 * 60_000);
 
 describe("conversation service", () => {
+  it("standalone greetings avoid model loading; substantive hello messages still use validated inference", async () => {
+    const provider = scriptedProvider([{ intent: "book_appointment" }]);
+    const calls = vi.spyOn(provider, "structured");
+    const h = makeHarness(provider);
+    const session = await h.conversation.start("voice");
+    const row = await h.conversation.requireConversation(session.conversationId, session.accessToken);
+    expect((await h.conversation.classifyIntent(row, "Hello.")).intent).toBe("greeting");
+    expect(calls).not.toHaveBeenCalled();
+    expect((await h.conversation.classifyIntent(row, "Hello, I want to book a visit")).intent).toBe("book_appointment");
+    expect(calls).toHaveBeenCalledTimes(1);
+  });
   it("starts a session with the configured greeting and a returned-once token", async () => {
     const h = makeHarness();
     const started = await h.conversation.start("text");

@@ -2,6 +2,48 @@
 
 Status: implemented (local verification only — see the honest limits at the end).
 
+## Current reliability checkpoint — 2026-10-27
+
+Owner-assisted Chrome microphone tests reached real tiny-int8 transcription:
+seven uploads had different audio hashes, with 4.753s cold and 1.251–1.724s
+warm STT. The owner reported slow replies and a repeated date question; one
+visible transcript misheard “flat” as “flight”. Full acoustic accuracy/echo/
+barge-in are not declared PASS. The isolated test backend kept records only
+in memory and used the mock calendar; no microphone audio was saved.
+
+Mute now discards partial capture; silent buffers recycle every 10s; late
+connections are closed after termination. Continue in chat preserves its
+active backend session through React unmount. These failures were reproduced
+in fixtures before repair. All 26 frontend tests pass. Backend natural-time
+parsing fixes the reproduced invented-year loop; exact greeting/site-visit
+requests and clear preferences avoid unnecessary inference. qwen remains
+1.7b; idle residency is limited to 60s per request. Cold loading can still
+take 13s and recognition can still mishear words. Admission and sequential
+STT/LLM safeguards remain unchanged. See HANDOFF for measured before/after data.
+
+### Owner manual recheck
+
+1. Use `npm run build && npm start` in the root and a built frontend:
+   `cd frontend`, `npm run build`, then
+   `npm run preview -- --port 5174 --host 127.0.0.1`.
+   Keep `CALENDAR_MODE=mock`. Built preview uses less RAM than the dev server.
+2. Leave at least 1.5 GB free before cold STT verification. Close unused apps
+   yourself or wait for Ollama's 60s idle unload; never lower the RAM gates.
+   `node scripts/speech-live-test.mjs` checks its gate before model loading.
+3. Open `http://localhost:5174/call`, allow the microphone, and wait for
+   Listening after every reply: “Hello.” → “I want to buy a 3BHK flat.” →
+   “My budget is 80 lakh.” → “Can I book a site visit?” Check every transcript;
+   do not accept an incorrect word as verified speech.
+4. Supply synthetic identity/contact only when asked. For date/time use an
+   unambiguous future date, e.g. “28 October at 3 pm” on 27 October 2026.
+   Check the offered year and **configured business timezone**; UTC is the
+   existing fallback when settings are absent. Stop at the offer during a
+   voice-only check; confirmation remains a separate deliberate action.
+5. Check silence/noise, mute/unmute, audible TTS and a deliberate interruption.
+   Use Prefer to type → Continue in chat and verify the same session accepts
+   text. End the session afterwards. Failure/empty-STT/outage/retry paths pass
+   fixtures; their acoustic behavior still needs observation.
+
 ## What the Call feature is
 
 `/call` is a continuous browser voice conversation with the AI receptionist:
@@ -74,9 +116,10 @@ To use a phone today you need:
 4. **Privacy:** calls are not recorded; audio is processed in memory by the
    backend exactly like chat voice messages (consent-gated persistence).
 
-Not verified yet (needs an HTTPS deployment or a physical device): microphone
-behaviour on iOS/Android browsers, and real STT round trips on this 8 GB
-development machine (see limits below).
+Not verified yet: microphone behaviour on iOS/Android, comprehensive acoustic
+echo/barge-in quality, and a complete human four-line dialogue after the latest
+backend date/performance fixes. Windows Chrome microphone/STT round trips were
+observed as described in the current checkpoint above.
 
 ## Telephony (calling a real phone number) — plan only, NOT implemented
 

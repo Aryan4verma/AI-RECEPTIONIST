@@ -11,7 +11,7 @@ import { generateConversationToken, hashConversationToken } from "../../auth/con
 import { intentSchema, type IntentResult } from "../../ai/schemas.js";
 import type { LLMProvider, StructuredRequest } from "../../ai/types.js";
 import type { BookingStateRepo } from "../../db/ports.js";
-import { emptyExtraction, type ExtractionService } from "../extraction/service.js";
+import { bareSiteVisitPurpose, emptyExtraction, type ExtractionService } from "../extraction/service.js";
 import type { KnowledgeService } from "../knowledge/service.js";
 import type { BookingService } from "../booking/service.js";
 import { isPropertyDetail, isPropertyInterest, propertyFollowUp } from "./propertyEnquiry.js";
@@ -248,13 +248,30 @@ export class ConversationService {
 
   /** Classify one customer utterance with validated structured output. */
   async classifyIntent(conversation: ConversationRow, text: string): Promise<IntentResult> {
+    if (bareSiteVisitPurpose(text)) return { schema_version: 1, intent: "book_appointment" };
+    // A standalone greeting needs no model residency or inference. Never
+    // short-circuit substantive messages such as "Hello, I want a flat".
+    if (/^\s*(?:hello|hi|hey|good (?:morning|afternoon|evening))(?: there)?[.!\s]*$/i.test(text)) {
+      return { schema_version: 1, intent: "greeting" };
+    }
+    if (!/\b(?:book|visit|appointment|cancel|reschedule|human|agent)\b/i.test(text) && isPropertyInterest(text)) {
+      return { schema_version: 1, intent: "property_enquiry" };
+    }
     const history = await this.deps.conversations.listMessages(conversation.id, 12);
     if (history.at(-1)?.role === "customer" && history.at(-1)?.content === text) history.pop();
+    if (isPropertyDetail(text) && !/^\s*(?:what|when|where|which|how|why|can|is|are|do|does|who)\b/i.test(text) &&
+        history.some(message => message.role === "customer" && isPropertyInterest(message.content))) {
+      return { schema_version: 1, intent: "property_enquiry" };
+    }
+    const pending = await this.deps.bookingState?.get(conversation.id);
+    const missing = pending?.state === "COLLECT_DETAILS" && this.deps.extraction
+      ? this.deps.extraction.missingFields({ ...emptyExtraction(), ...pending.extracted } as Parameters<ExtractionService["missingFields"]>[0]) : [];
     const request: StructuredRequest<typeof intentSchema> = {
       system:
         "You classify customer intents for a business receptionist. " +
         "Respond only with JSON: {\"schema_version\":1,\"intent\":\"book_appointment|cancel_appointment|reschedule_appointment|ask_question|property_enquiry|greeting|chitchat|request_human|unknown\"}. " +
         "Classify the LAST customer message using prior conversation as context. " +
+        (missing.length ? `An appointment request is already being collected. Missing fields: ${missing.join(", ")}. Answers to these fields continue book_appointment; do not restart the greeting. ` : "") +
         "Buying/renting a flat or home and follow-ups with budget, location or property type are property_enquiry. " +
         "Requests to book a site visit are book_appointment. Questions about factual inventory/prices are ask_question. " +
         "greeting means ONLY a greeting, never a substantive request even if it starts with hello. " +

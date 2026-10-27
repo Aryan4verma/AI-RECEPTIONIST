@@ -72,6 +72,8 @@ export class OllamaProvider implements LLMProvider {
         messages,
         stream: false,
         think: false,
+        // Keep warm between normal voice turns, release idle residency on 8 GB hosts.
+        keep_alive: "60s",
         options: { num_predict: request.maxOutputTokens },
         format: jsonSchemaFor(request.schemaName, request.schema),
       };

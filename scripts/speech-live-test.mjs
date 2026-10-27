@@ -7,8 +7,8 @@ import { exec } from "node:child_process";
 import { freemem } from "node:os";
 import { promisify } from "node:util";
 import { SidecarLifecycle, SidecarSpeechToText } from "../dist/speech/sidecar.js";
-import { validateAudio } from "../dist/speech/audioValidation.js";
-import { readFile } from "node:fs/promises";
+import { validateAudio, wavDurationSeconds } from "../dist/speech/audioValidation.js";
+import { readFile, unlink } from "node:fs/promises";
 
 const run = promisify(exec);
 const MIN_FREE_BYTES = 1_500_000_000; // 1.5 GB gate (model + runtime headroom)
@@ -33,7 +33,7 @@ async function main() {
   );
   const audio = new Uint8Array(await readFile(WAV));
   const kind = validateAudio(audio, { maxBytes: 10 * 1024 * 1024, maxSeconds: 60 });
-  const duration = 1; // SAPI sample length ~3-4s; recompute for the report below
+  const duration = wavDurationSeconds(audio);
 
   const lifecycle = new SidecarLifecycle({
     port: 8790,
@@ -66,19 +66,17 @@ async function main() {
     const norm = (s) => s.toLowerCase().replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
     const expected = norm(TEXT);
     const gotCold = norm(cold.transcript);
-    const words = expected.split(" ");
-    const hits = words.filter((w) => gotCold.includes(w)).length;
-    const wordAccuracy = hits / words.length;
 
     console.log("[live-stt] RESULT (real audio, real tiny-int8 CPU):");
     console.log(`  transcript(cold): "${cold.transcript}"`);
     console.log(`  transcript(warm): "${warm.transcript}"`);
-    console.log(`  word-level accuracy vs SAPI sample: ${(wordAccuracy * 100).toFixed(0)}% (${hits}/${words.length})`);
+    console.log(`  normalized exact match: cold=${expected === gotCold}, warm=${expected === norm(warm.transcript)}`);
     console.log(`  latency: cold(incl. model load)=${coldTotal}ms  stt-cold=${cold.latencyMs}ms  stt-warm=${warm.latencyMs}ms`);
     console.log(`  sidecar RSS (max python proc): ${rssMb === null ? "probe unavailable" : `${rssMb} MB`}`);
-    console.log(`  audio: ${kind}, ${audio.length} bytes (SAPI sample, ~${duration}s class)`);
+    console.log(`  audio: ${kind}, ${audio.length} bytes, ${duration?.toFixed(2) ?? "unknown"}s (synthetic speech; NOT a microphone test)`);
   } finally {
     await lifecycle.stop();
+    await unlink(WAV).catch(() => undefined);
   }
   process.exit(0);
 }

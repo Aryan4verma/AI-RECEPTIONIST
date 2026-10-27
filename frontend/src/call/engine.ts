@@ -101,6 +101,7 @@ const VOICE_RMS = 0.015; // speech detection threshold
 const BARGE_RMS = 0.13; // barge-in threshold (well above echo residue)
 const BARGE_MS = 350;
 const MAX_TURN_MS = 25_000; // force end-of-turn on a very long utterance
+const IDLE_CAPTURE_MS = 10_000; // discard silent buffers; preserve pre-roll within this window
 
 const STT_DOWN_CODES = new Set(["STT_FAILED", "RESOURCE_LIMIT"]);
 
@@ -124,6 +125,9 @@ export class CallEngine {
   private bargeStart: number | null = null;
   private pendingBarge = false; // tick() marks a real interruption before cancelling TTS
   private listenEpoch = 0; // invalidates stale turn finishing
+  private captureStartedAt: number | null = null;
+  private resettingRecorder: RecorderHandle | null = null;
+  private sessionTransferred = false;
 
   constructor(private readonly deps: CallEngineDeps) {}
 
@@ -141,11 +145,22 @@ export class CallEngine {
 
   async start(): Promise<void> {
     if (this.state.status !== "idle" && this.state.status !== "ended" && this.state.status !== "error") return;
+    const epoch = ++this.listenEpoch;
     this.stopped = false;
-    this.set({ status: "connecting", note: null, offer: null, durationSec: 0, transcript: [], level: 0 });
+    this.sessionTransferred = false;
+    this.pendingBarge = false;
+    this.bargeStart = null;
+    this.set({ status: "connecting", session: null, note: null, offer: null, durationSec: 0, transcript: [], level: 0 });
     try {
-      this.mic = await this.deps.openMic();
+      const mic = await this.deps.openMic();
+      if (this.stopped || epoch !== this.listenEpoch) {
+        this.releaseMic(mic);
+        return;
+      }
+      this.mic = mic;
+      mic.stream.getAudioTracks().forEach(track => { track.enabled = !this.state.muted; });
     } catch {
+      if (this.stopped || epoch !== this.listenEpoch) return;
       this.set({ status: "error", note: "Microphone access was blocked. Allow microphone permission and try again." });
       return;
     }
@@ -155,14 +170,16 @@ export class CallEngine {
     }
     try {
       const s = await this.deps.api.startConversation("voice");
-      if (this.stopped) {
-        await this.cleanupMic();
+      if (this.stopped || epoch !== this.listenEpoch) {
+        // The backend session did not exist when end() ran; close it now.
+        await this.deps.api.endConversation(s.conversationId, s.accessToken).catch(() => undefined);
         return;
       }
       this.set({ session: { id: s.conversationId, token: s.accessToken } });
       this.push("assistant", s.greeting);
       await this.speakThenListen(s.greeting);
     } catch {
+      if (this.stopped || epoch !== this.listenEpoch) return;
       this.set({ status: "error", note: "Couldn't reach the receptionist. Please try again." });
       await this.cleanupMic();
     }
@@ -174,6 +191,8 @@ export class CallEngine {
     const lvl = this.state.muted ? 0 : this.mic?.analyser.level() ?? 0;
     if (this.state.status === "listening") {
       this.set({ level: Math.min(1, lvl * 6) });
+      if (this.state.muted || this.resettingRecorder === this.mic?.recorder) return;
+      this.captureStartedAt ??= nowMs;
       if (lvl >= VOICE_RMS) {
         this.speechStartedAt ??= nowMs;
         this.lastVoiceAt = nowMs;
@@ -186,6 +205,8 @@ export class CallEngine {
       if (silenceDone || tooLong) {
         this.speechStartedAt = null;
         void this.finishTurn(this.listenEpoch);
+      } else if (this.speechStartedAt === null && nowMs - this.captureStartedAt >= IDLE_CAPTURE_MS) {
+        this.discardCapture();
       }
     } else if (this.state.status === "speaking") {
       // Barge-in: loud sustained customer voice cancels TTS.
@@ -208,6 +229,12 @@ export class CallEngine {
     const next = !this.state.muted;
     this.mic?.stream.getAudioTracks().forEach((t) => (t.enabled = !next));
     this.set({ muted: next });
+    if (this.state.status === "listening") {
+      this.speechStartedAt = null;
+      this.lastVoiceAt = 0;
+      if (next) this.discardCapture();
+      else if (this.resettingRecorder !== this.mic?.recorder) this.listen();
+    }
   }
 
   /** Silent-mode: AI replies appear as transcript only, never spoken. */
@@ -233,13 +260,14 @@ export class CallEngine {
     }
   }
 
-  async end(): Promise<void> {
+  async end(preserveSession = false): Promise<void> {
+    this.sessionTransferred ||= preserveSession;
     this.stopped = true;
     this.listenEpoch++;
     this.deps.speech.cancel();
     const s = this.state.session;
     await this.cleanupMic();
-    if (s) {
+    if (s && !this.sessionTransferred) {
       try {
         await this.deps.api.endConversation(s.id, s.token);
       } catch {
@@ -250,10 +278,25 @@ export class CallEngine {
   }
 
   private async cleanupMic() {
-    this.mic?.recorder.dispose?.();
-    this.mic?.stream.getTracks().forEach((t) => t.stop());
-    this.mic?.analyser.close();
+    if (this.mic) this.releaseMic(this.mic);
     this.mic = null;
+  }
+
+  private releaseMic(mic: NonNullable<CallEngine["mic"]>) {
+    mic.recorder.dispose?.();
+    mic.stream.getTracks().forEach(t => t.stop());
+    mic.analyser.close();
+  }
+
+  private discardCapture(): void {
+    const recorder = this.mic?.recorder;
+    if (!recorder || this.resettingRecorder === recorder) return;
+    const epoch = this.listenEpoch;
+    this.resettingRecorder = recorder;
+    void recorder.stop().catch(() => undefined).then(() => {
+      if (this.resettingRecorder === recorder) this.resettingRecorder = null;
+      if (!this.stopped && epoch === this.listenEpoch && this.mic?.recorder === recorder && this.state.status === "listening") this.listen();
+    });
   }
 
   /** Speak with the recorder paused; resume listening when done (or barged in).
@@ -286,6 +329,7 @@ export class CallEngine {
     this.set({ status: "listening", level: 0 });
     this.speechStartedAt = null;
     this.lastVoiceAt = 0;
+    this.captureStartedAt = null;
     const rec = this.mic?.recorder;
     if (!rec || !rec.isSupported()) {
       this.set({
@@ -294,6 +338,7 @@ export class CallEngine {
       });
       return;
     }
+    if (this.state.muted || this.resettingRecorder === rec) return;
     try {
       rec.resume();
       rec.start();
