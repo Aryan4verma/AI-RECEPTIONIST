@@ -59,9 +59,9 @@ export default function Call() {
   });
 
   return (
-    <div className="flex h-dvh flex-col bg-canvas text-ink">
+    <div className="flex h-dvh flex-col overflow-hidden bg-canvas text-ink">
       {/* Top bar */}
-      <header className="border-b border-line bg-surface">
+      <header className="shrink-0 border-b border-line bg-surface">
         <div className={`mx-auto flex w-full items-center justify-between px-5 py-3.5 sm:px-8 ${!live && state.status !== "ended" ? "max-w-5xl" : "max-w-3xl"}`}>
           <Link to="/" className="flex items-center gap-3" aria-label="Cleardesk home">
             <span className="flex size-9 items-center justify-center rounded-lg bg-pine-800 font-display text-lg font-semibold text-[#f4f1e8]">
@@ -78,7 +78,7 @@ export default function Call() {
         </div>
       </header>
 
-      <main className={`mx-auto flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-5 py-7 sm:px-8 ${!live && state.status !== "ended" ? "max-w-5xl" : "max-w-3xl"}`}>
+      <main tabIndex={0} aria-label="Voice call" className={`call-scroll mx-auto flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-5 py-7 sm:px-8 ${!live && state.status !== "ended" ? "max-w-5xl" : "max-w-3xl"}`}>
         {/* Pre-call */}
         {!live && state.status !== "ended" && (
           <div className="call-intro rise flex-1 py-4 sm:py-8"><div className="flex flex-col items-start gap-6">
@@ -156,10 +156,10 @@ export default function Call() {
 
         {/* In-call */}
         {live && (
-          <div className="flex flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col">
             <h1 className="sr-only">Browser voice conversation</h1>
             {/* Stage */}
-            <div className="flex flex-col items-center gap-4 pb-5 pt-1 sm:pt-4">
+            <div className="flex shrink-0 flex-col items-center gap-4 pb-5 pt-1 sm:pt-4">
               <p
                 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-pine-700"
                 aria-live="polite"
@@ -212,7 +212,7 @@ export default function Call() {
 
             {/* Unavailable / error — honest, with retry and a real text fallback */}
             {(state.status === "unavailable" || state.status === "error") && (
-              <div className="rise rounded-card border border-line bg-surface p-5 text-center shadow-card">
+              <div className="rise shrink-0 rounded-card border border-line bg-surface p-5 text-center shadow-card">
                 <p className="text-[13.5px] leading-relaxed text-ink-2">{state.note}</p>
                 <div className="mt-4 flex flex-wrap justify-center gap-2.5">
                   <Button variant="secondary" onClick={retryVoice}>
@@ -229,12 +229,12 @@ export default function Call() {
             )}
 
             {/* Live transcript */}
-            <div className="mt-4 flex min-h-0 flex-1 flex-col sm:mt-5">
-              <div className="flex h-full max-h-72 flex-col rounded-card border border-line bg-surface shadow-card">
+            <div className="mt-4 flex min-h-40 flex-1 flex-col sm:mt-5">
+              <div className="flex min-h-0 max-h-72 flex-1 flex-col rounded-card border border-line bg-surface shadow-card">
                 <p className="border-b border-line px-4 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-3">
                   Live transcript
                 </p>
-                <div ref={transcriptRef} role="log" aria-label="Live call transcript" aria-live="polite" className="pane-scroll flex min-h-32 flex-1 flex-col space-y-3 overflow-y-auto px-4 py-4">
+                <div ref={transcriptRef} role="log" aria-label="Live call transcript" aria-live="polite" tabIndex={0} className="call-scroll flex min-h-0 flex-1 flex-col space-y-3 overflow-y-auto px-4 py-4">
                   {state.transcript.map((m) => (
                     <div
                       key={m.id}
@@ -286,7 +286,7 @@ export default function Call() {
             </div>
 
             {/* Controls — three circular actions with captions */}
-            <div className="flex items-start justify-center gap-8 pb-2 pt-6">
+            <div className="flex shrink-0 items-start justify-center gap-8 pb-2 pt-6">
               <ControlButton
                 label={state.muted ? "Unmute" : "Mute"}
                 pressed={state.muted}
